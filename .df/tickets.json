@@ -1,0 +1,13 @@
+[
+  {
+    "ticketId": "ENVY-1",
+    "title": "Create Envy configuration core and local environment inspection",
+    "category": "enhancement",
+    "triageState": "ready-for-agent",
+    "brief": "Build the first usable vertical slice of Envy from this product brief. Keep the core deterministic and local-only. The slice must establish the configuration domain, discover local environment files without exposing secret values, define a minimal envy.yaml schema, and provide CLI behavior for check, diff, and doctor with redacted output.",
+    "specReference": "PRD.md",
+    "blockers": [],
+    "workTask": {"kind": "implementation", "domainChange": true},
+    "source": {"system": "greenfield-pilot", "locator": "PRD.md", "observedAt": "2026-08-28T00:00:00Z"}
+  }
+]
