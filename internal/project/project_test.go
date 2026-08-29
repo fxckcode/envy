@@ -249,8 +249,46 @@ func TestApprovalModalDisplayMasked(t *testing.T) {
 		t.Fatalf("enqueue: %v", err)
 	}
 	oldD, newD := project.ApprovalDisplay(req)
-	if oldD != redact.Placeholder || newD != redact.Placeholder {
-		t.Fatalf("old=%q new=%q", oldD, newD)
+	if oldD != redact.Placeholder {
+		t.Fatalf("old should be masked, got %q", oldD)
+	}
+	if newD != "redis://agent" {
+		t.Fatalf("proposed new value should be visible, got %q", newD)
+	}
+}
+
+func TestAllowForProjectGrantsEnvScope(t *testing.T) {
+	p := openSample(t)
+	req, _ := p.EnqueueApproval("Claude Code", "development", "REDIS_URL", "redis://granted", "first")
+	if err := p.RespondApproval(req.ID, project.AllowForProject); err != nil {
+		t.Fatalf("allow project: %v", err)
+	}
+	_, err := p.EnqueueApproval("Claude Code", "development", "PORT", "9999", "follow-up")
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	if len(p.PendingApprovals()) != 0 {
+		t.Fatal("expected auto-apply under actor+env grant")
+	}
+	port, _ := p.RawValue("development", "PORT")
+	if port != "9999" {
+		t.Fatalf("port=%q", port)
+	}
+	// Different agent still requires approval.
+	_, err = p.EnqueueApproval("Codex", "development", "PORT", "1", "other agent")
+	if err != nil {
+		t.Fatalf("enqueue other agent: %v", err)
+	}
+	if len(p.PendingApprovals()) == 0 {
+		t.Fatal("other agent should still require approval")
+	}
+	// Staging still requires approval (env-scoped grant).
+	_, err = p.EnqueueApproval("Claude Code", "staging", "PORT", "1", "other env")
+	if err != nil {
+		t.Fatalf("enqueue staging: %v", err)
+	}
+	if len(p.PendingApprovals()) < 2 {
+		t.Fatal("staging write should still require approval")
 	}
 }
 
