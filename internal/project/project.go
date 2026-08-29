@@ -101,8 +101,9 @@ type CompareCell struct {
 
 // CompareResult is the compare matrix + warnings.
 type CompareResult struct {
-	LeftEnv  string
-	RightEnv string
+	Envs     []string
+	LeftEnv  string // first env (compat with two-env callers)
+	RightEnv string // second env (compat with two-env callers)
 	Keys     []string
 	Cells    map[string]map[string]CompareCell // key -> env -> cell
 	Warnings []string
@@ -422,74 +423,6 @@ func (p *Project) persistLocked(env string) error {
 	return p.envs[env].WriteFile(path)
 }
 
-// Compare builds a presence/diff matrix between two environments.
-func (p *Project) Compare(left, right string) (CompareResult, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	if _, ok := p.envs[left]; !ok {
-		return CompareResult{}, fmt.Errorf("unknown environment %q", left)
-	}
-	if _, ok := p.envs[right]; !ok {
-		return CompareResult{}, fmt.Errorf("unknown environment %q", right)
-	}
-	keySet := map[string]struct{}{}
-	for _, k := range p.envs[left].Keys() {
-		keySet[k] = struct{}{}
-	}
-	for _, k := range p.envs[right].Keys() {
-		keySet[k] = struct{}{}
-	}
-	for k := range p.cfg.Schema {
-		keySet[k] = struct{}{}
-	}
-	keys := make([]string, 0, len(keySet))
-	for k := range keySet {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	cells := map[string]map[string]CompareCell{}
-	var warnings []string
-	for _, k := range keys {
-		lv, lok := p.envs[left].Get(k)
-		rv, rok := p.envs[right].Get(k)
-		row := map[string]CompareCell{}
-		switch {
-		case lok && rok:
-			if lv == rv {
-				row[left] = CompareCell{Kind: CellPresent, Display: "✓"}
-				row[right] = CompareCell{Kind: CellPresent, Display: "✓"}
-			} else {
-				// Differing values: show ≠ only — never cleartext (secret or not).
-				row[left] = CompareCell{Kind: CellDiff, Display: "≠"}
-				row[right] = CompareCell{Kind: CellDiff, Display: "≠"}
-				warnings = append(warnings, fmt.Sprintf("⚠ %s differs between %s and %s", k, left, right))
-			}
-		case lok && !rok:
-			row[left] = CompareCell{Kind: CellOnly, Display: "◇"}
-			row[right] = CompareCell{Kind: CellAbsent, Display: "✗"}
-			warnings = append(warnings, fmt.Sprintf("⚠ %s is missing %s", right, k))
-			warnings = append(warnings, fmt.Sprintf("⚠ %s exists only in %s", k, left))
-		case !lok && rok:
-			row[left] = CompareCell{Kind: CellAbsent, Display: "✗"}
-			row[right] = CompareCell{Kind: CellOnly, Display: "◇"}
-			warnings = append(warnings, fmt.Sprintf("⚠ %s is missing %s", left, k))
-			warnings = append(warnings, fmt.Sprintf("⚠ %s exists only in %s", k, right))
-		default:
-			row[left] = CompareCell{Kind: CellAbsent, Display: "✗"}
-			row[right] = CompareCell{Kind: CellAbsent, Display: "✗"}
-		}
-		cells[k] = row
-	}
-	return CompareResult{
-		LeftEnv:  left,
-		RightEnv: right,
-		Keys:     keys,
-		Cells:    cells,
-		Warnings: warnings,
-	}, nil
-}
-
 // Validate runs schema validation on the active environment.
 func (p *Project) Validate() ValidationResult {
 	p.mu.Lock()
@@ -695,8 +628,8 @@ func (p *Project) EnqueueApproval(actor, env, key, newValue, reason string) (App
 		Secret:      secret,
 		Reason:      reason,
 	}
-	// Project-wide grant short-circuits to apply.
-	if p.projectGrants["*"] || p.projectGrants[env+"."+key] || p.projectGrants[env+".*"] {
+	// Project grant short-circuits to apply (actor + env scope).
+	if p.hasProjectGrantLocked(actor, env, key) {
 		p.envs[env].Set(key, newValue)
 		_ = p.persistLocked(env)
 		p.appendAuditLocked(actor, "write", key, env, AuditOK, "applied via project grant")
@@ -705,6 +638,21 @@ func (p *Project) EnqueueApproval(actor, env, key, newValue, reason string) (App
 	p.pending = append(p.pending, req)
 	p.appendAuditLocked(actor, "request_write", key, env, AuditOK, "awaiting approval")
 	return req, nil
+}
+
+func (p *Project) hasProjectGrantLocked(actor, env, key string) bool {
+	if p.projectGrants["*"] {
+		return true
+	}
+	if p.projectGrants[env+"."+key] || p.projectGrants[env+".*"] {
+		return true
+	}
+	if actor != "" {
+		if p.projectGrants[actor+"@"+env+"."+key] || p.projectGrants[actor+"@"+env+".*"] {
+			return true
+		}
+	}
+	return false
 }
 
 // PendingApprovals returns queued approval requests.
@@ -747,7 +695,8 @@ func (p *Project) RespondApproval(id string, decision ApprovalDecision) error {
 		p.appendAuditLocked("human", "allow_once", req.Key, req.Environment, AuditOK, req.Actor)
 		return nil
 	case AllowForProject:
-		p.projectGrants["*"] = true
+		// Grant matching writes for this agent in this environment until revoked.
+		p.projectGrants[req.Actor+"@"+req.Environment+".*"] = true
 		p.envs[req.Environment].Set(req.Key, req.NewValue)
 		if err := p.persistLocked(req.Environment); err != nil {
 			return err
@@ -759,9 +708,32 @@ func (p *Project) RespondApproval(id string, decision ApprovalDecision) error {
 	}
 }
 
-// ApprovalDisplay returns redacted old/new for the modal.
+// RevokeProjectGrants clears Allow-for-project write grants.
+func (p *Project) RevokeProjectGrants() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.projectGrants = map[string]bool{}
+}
+
+// ApprovalDisplay returns modal-safe old/new strings.
+// Old secret values are always masked. The proposed new value is shown so the
+// human can approve knowingly (agent write gate).
 func ApprovalDisplay(req ApprovalRequest) (oldDisp, newDisp string) {
-	return redact.ModalValue(req.OldValue, req.Secret), redact.ModalValue(req.NewValue, req.Secret)
+	if req.Secret || req.OldValue == "" {
+		if req.Secret {
+			oldDisp = redact.Placeholder
+		} else {
+			oldDisp = "—"
+		}
+	} else {
+		oldDisp = req.OldValue
+	}
+	if req.NewValue == "" {
+		newDisp = "—"
+	} else {
+		newDisp = req.NewValue
+	}
+	return oldDisp, newDisp
 }
 
 // Config returns a copy-safe view of schema secret flags (for TUI).

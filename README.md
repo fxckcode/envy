@@ -44,8 +44,9 @@ go test ./...
 |-----|--------|
 | `a` | Add variable |
 | `e` | Edit variable |
+| `x` | Delete variable (confirm with `y`) |
 | `c` | Compare environments |
-| `v` | Run validations |
+| `v` | Run validations (status area) |
 | `p` | View providers |
 | `g` | Agent activity |
 | `q` | Quit |
