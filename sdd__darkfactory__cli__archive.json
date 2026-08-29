@@ -1,6 +1,6 @@
 {
   "topicKey": "sdd/darkfactory/cli/archive",
   "title": "SDD Archive Report — cli",
-  "content": "# Archive Report — cli\n\n**Status**: PASSED (checker skipped (opt-in via DARKFACTORY_CHECKER=1))\n**Iteration**: 1/2\n**Engram Topics**: sdd/darkfactory/cli/apply\n",
-  "savedAt": "2026-08-29T03:46:58.454Z"
+  "content": "# Archive Report — cli\n\n**Status**: PASSED (checker skipped (opt-in via DARKFACTORY_CHECKER=1))\n**Iteration**: 2/2\n**Engram Topics**: sdd/darkfactory/cli/apply\n",
+  "savedAt": "2026-08-29T04:05:00.000Z"
 }
