@@ -1,0 +1,36 @@
+version: 1
+project: sample-api
+
+environments:
+  development:
+    file: .env
+  staging:
+    file: .env.staging
+  production:
+    file: .env.production
+    protected: true
+    provider: aws-secrets-manager
+    path: sample-api/production
+
+schema:
+  DATABASE_URL:
+    required: true
+    secret: true
+    type: url
+  REDIS_URL:
+    required: true
+    secret: true
+    type: url
+  AWS_REGION:
+    required: true
+    type: string
+  PORT:
+    required: true
+    type: integer
+  DEBUG:
+    required: false
+    type: boolean
+  STRIPE_SECRET:
+    required: true
+    secret: true
+    type: string
