@@ -371,6 +371,9 @@ func looksLikeSecretValue(v string) bool {
 	if strings.HasPrefix(low, "sk_") || strings.HasPrefix(low, "pk_live") {
 		return true
 	}
+	if strings.HasPrefix(strings.ToUpper(v), "AKIA") {
+		return true
+	}
 	if strings.Contains(low, "://") && (strings.Contains(low, "password") || strings.Contains(v, "@")) {
 		// URL with userinfo often indicates credentials.
 		if strings.Contains(v, "@") && strings.Contains(v, "://") {

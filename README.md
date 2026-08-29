@@ -6,7 +6,7 @@ access without exposing secrets by default.
 
 ## Requirements
 
-- Go 1.22+
+- Go 1.23+
 
 ## Quick start
 
@@ -30,6 +30,9 @@ go run ./cmd/envy export production --reveal
 go run ./cmd/envy run development -- npm run dev
 go run ./cmd/envy agent grant claude-code --env development --write --ttl 30m
 go run ./cmd/envy agent revoke claude-code
+
+# MCP server (stdio) for AI agents
+ENVY_ROOT=. ENVY_AGENT=default go run ./cmd/envy-mcp
 ```
 
 ## Tests
@@ -37,6 +40,10 @@ go run ./cmd/envy agent revoke claude-code
 ```bash
 go test ./...
 ```
+
+## MCP tools
+
+Agent-facing tools (`env_list`, `env_check`, `env_diff`, `env_metadata`, `env_set`, …) redact secrets as `[REDACTED]`, enforce least-privilege agent permissions from `envy.yaml`, and write audit rows under `.envy/audit.jsonl`.
 
 ## Keyboard (TUI)
 

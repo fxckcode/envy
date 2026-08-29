@@ -16,6 +16,8 @@ type SchemaField struct {
 	Type     string   `yaml:"type"`
 	Default  string   `yaml:"default"`
 	Values   []string `yaml:"values"`
+	Min      *int     `yaml:"min"`
+	Max      *int     `yaml:"max"`
 }
 
 // Environment declares where an environment's values live.
@@ -58,6 +60,9 @@ func Load(path string) (*Config, error) {
 	}
 	if cfg.Schema == nil {
 		cfg.Schema = map[string]SchemaField{}
+	}
+	if cfg.Agents == nil {
+		cfg.Agents = map[string]map[string]AgentPerms{}
 	}
 	if cfg.Version == 0 {
 		cfg.Version = 1

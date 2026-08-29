@@ -8,6 +8,8 @@ const (
 	MaskLength = 8
 	// Placeholder is the textual redaction used in modals and audit.
 	Placeholder = "********"
+	// MCPPlaceholder is the agent-facing redaction token (never cleartext).
+	MCPPlaceholder = "[REDACTED]"
 )
 
 // Mask returns the visual mask for secret list cells.

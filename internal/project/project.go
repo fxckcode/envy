@@ -21,12 +21,14 @@ import (
 
 // VariableView is a safe display projection of a binding.
 type VariableView struct {
-	Key       string
-	Display   string // masked if secret
-	Secret    bool
-	Missing   bool
-	Invalid   bool
+	Key           string
+	Display       string // masked if secret; MCP uses [REDACTED] for secrets
+	Secret        bool
+	Missing       bool
+	Invalid       bool
 	InvalidReason string
+	Source        string
+	Present       bool
 }
 
 // Status summarizes the active environment footer.
@@ -46,9 +48,10 @@ type ProviderMeta struct {
 type AuditResult string
 
 const (
-	AuditOK     AuditResult = "ok"
-	AuditDenied AuditResult = "denied"
-	AuditError  AuditResult = "error"
+	AuditOK      AuditResult = "ok"
+	AuditDenied  AuditResult = "denied"
+	AuditError   AuditResult = "error"
+	AuditPending AuditResult = "pending_approval"
 )
 
 // AuditEntry is a redacted activity timeline row.
@@ -95,8 +98,9 @@ const (
 
 // CompareCell is one matrix cell (no cleartext secrets).
 type CompareCell struct {
-	Kind    CellKind
-	Display string // glyph or mask — never secret cleartext
+	Kind    CellKind `json:"kind"`
+	Display string   `json:"display"` // glyph or non-secret value — never secret cleartext
+	Value   string   `json:"value,omitempty"` // non-secret cleartext or [REDACTED]
 }
 
 // CompareResult is the compare matrix + warnings.
@@ -111,15 +115,17 @@ type CompareResult struct {
 
 // Finding is a validation issue without secret values.
 type Finding struct {
-	Key     string
-	Kind    string // missing | invalid
-	Message string
+	Key     string `json:"key"`
+	Kind    string `json:"kind"` // missing | invalid
+	Message string `json:"message,omitempty"`
+	Reason  string `json:"reason,omitempty"`
 }
 
 // ValidationResult holds schema validation findings.
 type ValidationResult struct {
-	Missing []Finding
-	Invalid []Finding
+	Status  string    `json:"status"` // valid | invalid
+	Missing []Finding `json:"missing"`
+	Invalid []Finding `json:"invalid"`
 }
 
 // Project is the mutable local project state behind the TUI and CLI.
@@ -300,6 +306,7 @@ func (p *Project) variablesLocked(env string) []VariableView {
 		}
 	}
 	sort.Strings(keys)
+	source := p.cfg.SourceLabel(env)
 	out := make([]VariableView, 0, len(keys))
 	for _, k := range keys {
 		secret := p.isSecretLocked(k)
@@ -319,6 +326,8 @@ func (p *Project) variablesLocked(env string) []VariableView {
 			Missing:       missing,
 			Invalid:       invalid,
 			InvalidReason: reason,
+			Source:        source,
+			Present:       ok,
 		})
 	}
 	return out
@@ -450,13 +459,18 @@ func (p *Project) validateLocked(env string) ValidationResult {
 					Key:     k,
 					Kind:    "invalid",
 					Message: reason,
+					Reason:  reason,
 				})
 			}
 		}
 	}
 	sort.Slice(missing, func(i, j int) bool { return missing[i].Key < missing[j].Key })
 	sort.Slice(invalid, func(i, j int) bool { return invalid[i].Key < invalid[j].Key })
-	return ValidationResult{Missing: missing, Invalid: invalid}
+	status := "valid"
+	if len(missing) > 0 || len(invalid) > 0 {
+		status = "invalid"
+	}
+	return ValidationResult{Status: status, Missing: missing, Invalid: invalid}
 }
 
 func validateValue(cfg *config.Config, key, value string, present bool) (bool, string) {
@@ -469,8 +483,15 @@ func validateValue(cfg *config.Config, key, value string, present bool) (bool, s
 	}
 	switch field.Type {
 	case "integer":
-		if _, err := strconv.Atoi(value); err != nil {
+		n, err := strconv.Atoi(value)
+		if err != nil {
 			return true, "expected integer"
+		}
+		if field.Min != nil && n < *field.Min {
+			return true, fmt.Sprintf("expected integer >= %d", *field.Min)
+		}
+		if field.Max != nil && n > *field.Max {
+			return true, fmt.Sprintf("expected integer <= %d", *field.Max)
 		}
 	case "boolean":
 		low := strings.ToLower(value)
