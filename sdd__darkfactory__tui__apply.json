@@ -1,0 +1,6 @@
+{
+  "topicKey": "sdd/darkfactory/tui/apply",
+  "title": "SDD apply — tui",
+  "content": "All **15 TUI acceptance scenarios** are implemented on the existing starter. Commit: `ce4e8ff`.\n\n### What landed\n- Dashboard with project/env/vars/footer; secrets masked (`●●●●●●●●`)\n- Add / edit (secret echo masked; non-secret cleartext) / delete with `y` confirm\n- Multi-env compare (`development` · `staging` · `production`) with presence glyphs and non-secret divergent values\n- Validation findings in the status area (`v`)\n- Providers, agent activity, approval modal (masked old, proposed new, Allow once / Allow for project / Deny)\n- Allow-for-project grants scoped to **actor + env** until revoked\n\n### Review summary\n| Axis | Findings |\n|------|----------|\n| **Standards** | File sizes OK after split; Bubble Tea still mutates model in place (idiomatic); proposed new values intentionally cleartext for approval |\n| **Spec** | All 15 covered by acceptance tests; minor extras (protected-env block, `[A]` bridge) retained from starter |\n\n`go test ./...` passes.\n",
+  "savedAt": "2026-08-29T03:26:48.232Z"
+}
