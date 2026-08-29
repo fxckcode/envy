@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fxckcode/envy/internal/cli"
 	"github.com/fxckcode/envy/internal/project"
@@ -46,9 +47,13 @@ func runCLI(t *testing.T, root string, args ...string) (stdout, stderr string, c
 
 func TestListMasksSecrets(t *testing.T) {
 	root := sampleRoot(t)
-	out, _, code := runCLI(t, root, "list")
+	// Scenario 1: envy list for development — schema secrets redacted.
+	out, _, code := runCLI(t, root, "list", "--env", "development")
 	if code != 0 {
 		t.Fatalf("exit=%d out=%s", code, out)
+	}
+	if !strings.Contains(out, "ENV: development") {
+		t.Fatalf("expected development env header:\n%s", out)
 	}
 	if !strings.Contains(out, "REDIS_URL") {
 		t.Fatalf("expected REDIS_URL in list:\n%s", out)
@@ -56,14 +61,14 @@ func TestListMasksSecrets(t *testing.T) {
 	if !strings.Contains(out, redact.Mask()) {
 		t.Fatalf("expected masked secret:\n%s", out)
 	}
-	if strings.Contains(out, "postgres://") || strings.Contains(out, "sk_test") {
+	if strings.Contains(out, "postgres://") || strings.Contains(out, "sk_test") || strings.Contains(out, "redis://") {
 		t.Fatalf("secret plaintext leaked:\n%s", out)
 	}
 }
 
 func TestCheckMissingKeysNonZeroNoSecrets(t *testing.T) {
 	root := sampleRoot(t)
-	// Remove required REDIS_URL from development.
+	// Scenario 2: required REDIS_URL absent → check --env development non-zero.
 	envPath := filepath.Join(root, ".env")
 	data, _ := os.ReadFile(envPath)
 	lines := strings.Split(string(data), "\n")
@@ -76,7 +81,7 @@ func TestCheckMissingKeysNonZeroNoSecrets(t *testing.T) {
 	}
 	_ = os.WriteFile(envPath, []byte(strings.Join(kept, "\n")), 0o600)
 
-	out, errOut, code := runCLI(t, root, "check")
+	out, errOut, code := runCLI(t, root, "check", "--env", "development")
 	if code == 0 {
 		t.Fatalf("expected non-zero, got 0\nout=%s\nerr=%s", out, errOut)
 	}
@@ -91,7 +96,17 @@ func TestCheckMissingKeysNonZeroNoSecrets(t *testing.T) {
 
 func TestCheckInvalidTypeReportsReason(t *testing.T) {
 	root := sampleRoot(t)
-	out, errOut, code := runCLI(t, root, "check", "--env", "production")
+	// Scenario 3: PORT=abc → envy check reports expected integer.
+	envPath := filepath.Join(root, ".env")
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.Replace(string(data), "PORT=3000", "PORT=abc", 1)
+	if err := os.WriteFile(envPath, []byte(updated), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, code := runCLI(t, root, "check")
 	if code == 0 {
 		t.Fatal("expected non-zero for invalid PORT")
 	}
@@ -215,34 +230,54 @@ func TestGetRedactsUnlessReveal(t *testing.T) {
 
 func TestSetPersistsMasked(t *testing.T) {
 	root := sampleRoot(t)
-	_, _, code := runCLI(t, root, "set", "REDIS_URL", "redis://localhost:6380")
+	// Scenario 6: human set --env development writes provider; list shows key configured.
+	_, _, code := runCLI(t, root, "set", "REDIS_URL", "redis://localhost:6379", "--env", "development")
 	if code != 0 {
 		t.Fatalf("set exit=%d", code)
 	}
-	out, _, _ := runCLI(t, root, "get", "REDIS_URL")
-	if strings.Contains(out, "6380") {
+	out, _, _ := runCLI(t, root, "get", "REDIS_URL", "--env", "development")
+	if strings.Contains(out, "6379") {
 		t.Fatalf("get should mask: %q", out)
 	}
-	listOut, _, _ := runCLI(t, root, "list")
-	if strings.Contains(listOut, "6380") {
-		t.Fatalf("list should mask: %q", listOut)
+	listOut, _, listCode := runCLI(t, root, "list", "--env", "development")
+	if listCode != 0 {
+		t.Fatalf("list exit=%d", listCode)
+	}
+	if !strings.Contains(listOut, "REDIS_URL") {
+		t.Fatalf("list should show configured key:\n%s", listOut)
+	}
+	if strings.Contains(listOut, "redis://") {
+		t.Fatalf("list should mask secret value: %q", listOut)
+	}
+	for _, line := range strings.Split(listOut, "\n") {
+		if strings.Contains(line, "REDIS_URL") && strings.HasPrefix(strings.TrimSpace(line), "⚠") {
+			t.Fatalf("REDIS_URL should be configured (not missing):\n%s", line)
+		}
 	}
 	raw, err := os.ReadFile(filepath.Join(root, ".env"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), "REDIS_URL=redis://localhost:6380") {
+	if !strings.Contains(string(raw), "REDIS_URL=redis://localhost:6379") {
 		t.Fatalf("not persisted: %s", raw)
 	}
 }
 
 func TestDeleteRemovesKey(t *testing.T) {
 	root := sampleRoot(t)
-	_, _, code := runCLI(t, root, "delete", "REDIS_URL")
+	// Scenario 7: delete --env development removes key; not present in list/check.
+	_, _, code := runCLI(t, root, "delete", "REDIS_URL", "--env", "development")
 	if code != 0 {
 		t.Fatalf("delete exit=%d", code)
 	}
-	out, errOut, checkCode := runCLI(t, root, "check")
+	listOut, _, _ := runCLI(t, root, "list", "--env", "development")
+	for _, line := range strings.Split(listOut, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.Contains(trimmed, "REDIS_URL") && !strings.HasPrefix(trimmed, "⚠") {
+			t.Fatalf("REDIS_URL must not appear as present after delete:\n%s", listOut)
+		}
+	}
+	out, errOut, checkCode := runCLI(t, root, "check", "--env", "development")
 	if checkCode == 0 {
 		t.Fatal("check should fail after deleting required key")
 	}
@@ -250,13 +285,21 @@ func TestDeleteRemovesKey(t *testing.T) {
 	if !strings.Contains(combined, "REDIS_URL") {
 		t.Fatalf("expected missing REDIS_URL: %s", combined)
 	}
+	raw, err := os.ReadFile(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatalf("read .env after delete: %v", err)
+	}
+	if strings.Contains(string(raw), "REDIS_URL=") {
+		t.Fatalf("REDIS_URL still on disk: %s", raw)
+	}
 }
 
 func TestImportMergesWithoutEcho(t *testing.T) {
 	root := sampleRoot(t)
+	// Scenario 9: import into development without printing secrets.
 	importPath := filepath.Join(root, "import.env")
 	_ = os.WriteFile(importPath, []byte("NEW_KEY=hello\nREDIS_URL=redis://imported:6379\n"), 0o600)
-	out, errOut, code := runCLI(t, root, "import", importPath)
+	out, errOut, code := runCLI(t, root, "import", importPath, "--env", "development")
 	if code != 0 {
 		t.Fatalf("import exit=%d out=%s err=%s", code, out, errOut)
 	}
@@ -349,7 +392,10 @@ func TestAgentWriteAllowedThenDeniedAfterRevoke(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("agent write under grant should succeed, exit=%d", code)
 	}
-	raw, _ := os.ReadFile(filepath.Join(root, ".env"))
+	raw, err := os.ReadFile(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if !strings.Contains(string(raw), "redis://agent:6379") {
 		t.Fatalf("agent write not persisted: %s", raw)
 	}
@@ -365,9 +411,41 @@ func TestAgentWriteAllowedThenDeniedAfterRevoke(t *testing.T) {
 	if !strings.Contains(strings.ToLower(combined), "denied") && !strings.Contains(strings.ToLower(combined), "grant") {
 		t.Fatalf("expected denial message: %s", combined)
 	}
-	raw, _ = os.ReadFile(filepath.Join(root, ".env"))
+	raw, err = os.ReadFile(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
 	if strings.Contains(string(raw), "redis://denied:6379") {
 		t.Fatal("denied write must not persist")
+	}
+}
+
+func TestAgentGrantExpiresViaCLI(t *testing.T) {
+	// Scenario 13: write allowed until TTL expiry (CLI surface).
+	root := sampleRoot(t)
+	out, _, code := runCLI(t, root, "agent", "grant", "claude-code", "--env", "development", "--write", "--ttl", "100ms")
+	if code != 0 {
+		t.Fatalf("grant exit=%d out=%s", code, out)
+	}
+	_, _, code = runCLI(t, root, "set", "--as-agent", "claude-code", "--env", "development", "REDIS_URL", "redis://before-ttl:6379")
+	if code != 0 {
+		t.Fatalf("write under grant should succeed, exit=%d", code)
+	}
+	// Wait past TTL before attempting another write.
+	time.Sleep(250 * time.Millisecond)
+	out, errOut, code := runCLI(t, root, "set", "--as-agent", "claude-code", "--env", "development", "REDIS_URL", "redis://after-ttl:6379")
+	if code == 0 {
+		t.Fatalf("agent write after TTL should be denied\nout=%s\nerr=%s", out, errOut)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(raw), "redis://after-ttl:6379") {
+		t.Fatal("expired write must not persist")
+	}
+	if !strings.Contains(string(raw), "redis://before-ttl:6379") {
+		t.Fatalf("pre-expiry write should remain: %s", raw)
 	}
 }
 

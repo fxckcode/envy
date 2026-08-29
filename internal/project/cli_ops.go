@@ -444,7 +444,7 @@ func (p *Project) ImportFile(path string) (int, error) {
 	if err := p.persistLocked(p.active); err != nil {
 		return 0, err
 	}
-	p.appendAuditLocked("human", "import", "", p.active, AuditOK, fmt.Sprintf("%d keys", len(keys)))
+	p.appendAuditLocked("human", "import", filepath.Base(path), p.active, AuditOK, fmt.Sprintf("%d keys", len(keys)))
 	return len(keys), nil
 }
 
@@ -599,7 +599,7 @@ func (p *Project) GrantAgent(agent, env string, write, deletePerm, readSecrets b
 	if err := p.persistGrantsLocked(); err != nil {
 		return GrantDisplay{}, err
 	}
-	p.appendAuditLocked(agent, "grant", "", env, AuditOK, "write="+fmt.Sprint(write))
+	p.appendAuditLocked(agent, "grant", "*", env, AuditOK, "write="+fmt.Sprint(write))
 	return GrantDisplay{
 		Agent:       agent,
 		Environment: env,
@@ -626,7 +626,7 @@ func (p *Project) RevokeAgent(agent string) error {
 	if err := p.persistGrantsLocked(); err != nil {
 		return err
 	}
-	p.appendAuditLocked(agent, "revoke", "", "", AuditOK, "")
+	p.appendAuditLocked(agent, "revoke", "*", "", AuditOK, "")
 	return nil
 }
 
