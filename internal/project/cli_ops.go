@@ -558,6 +558,18 @@ func (p *Project) Root() string {
 	return p.root
 }
 
+// SetClock overrides the time source used for grant TTL and audit timestamps.
+// Pass nil to restore time.Now. Intended for tests and deterministic expiry.
+func (p *Project) SetClock(now func() time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if now == nil {
+		p.now = time.Now
+		return
+	}
+	p.now = now
+}
+
 // GrantAgent creates a temporary agent permission grant.
 func (p *Project) GrantAgent(agent, env string, write, deletePerm, readSecrets bool, ttl time.Duration) (GrantDisplay, error) {
 	p.mu.Lock()

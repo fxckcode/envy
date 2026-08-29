@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/fxckcode/envy/internal/project"
 	"github.com/fxckcode/envy/internal/redact"
@@ -358,5 +359,39 @@ func TestProtectedProductionBlocksEdit(t *testing.T) {
 	val, _ := p.RawValue("production", "AWS_REGION")
 	if val != "us-west-2" {
 		t.Fatalf("value should be unchanged: %q", val)
+	}
+}
+
+func TestAgentGrantExpiresAndDeniesWrite(t *testing.T) {
+	p := openSample(t)
+	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
+	p.SetClock(func() time.Time { return now })
+
+	g, err := p.GrantAgent("claude-code", "development", true, false, false, 30*time.Minute)
+	if err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+	if g.ReadSecrets {
+		t.Fatal("read_values / read secrets must be denied by default")
+	}
+	if !g.Write {
+		t.Fatal("expected write grant")
+	}
+	if err := p.SetVariableAsAgent("claude-code", "REDIS_URL", "redis://before-expiry:6379"); err != nil {
+		t.Fatalf("write under grant: %v", err)
+	}
+
+	// Advance past TTL.
+	p.SetClock(func() time.Time { return now.Add(31 * time.Minute) })
+	err = p.SetVariableAsAgent("claude-code", "REDIS_URL", "redis://after-expiry:6379")
+	if err == nil {
+		t.Fatal("write after expiry should be denied")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "denied") && !strings.Contains(strings.ToLower(err.Error()), "grant") {
+		t.Fatalf("expected denial message: %v", err)
+	}
+	val, _ := p.RawValue("development", "REDIS_URL")
+	if strings.Contains(val, "after-expiry") {
+		t.Fatalf("expired write must not persist: %q", val)
 	}
 }

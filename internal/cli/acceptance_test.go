@@ -155,12 +155,10 @@ func TestDoctorHealthyScore(t *testing.T) {
 	if !strings.Contains(out, "Score:") {
 		t.Fatalf("expected health score:\n%s", out)
 	}
-	for _, needle := range []string{"required", "duplicat", "gitignore", ".env.example", "✓", "✗", "⚠"} {
-		// At least some doctor language / glyphs present — flexible match.
-		_ = needle
-	}
-	if !strings.Contains(out, "✓") && !strings.Contains(out, "✗") {
-		t.Fatalf("expected check glyphs:\n%s", out)
+	for _, needle := range []string{"required", "duplicat", "ignored", "✓"} {
+		if !strings.Contains(strings.ToLower(out), strings.ToLower(needle)) {
+			t.Fatalf("expected doctor output to mention %q:\n%s", needle, out)
+		}
 	}
 }
 
@@ -453,24 +451,16 @@ func TestAgentGrantAndRevoke(t *testing.T) {
 	if !strings.Contains(strings.ToLower(out), "write") || !strings.Contains(out, "✓") {
 		t.Fatalf("expected write granted display:\n%s", out)
 	}
-	if !strings.Contains(strings.ToLower(out), "read secret") && !strings.Contains(strings.ToLower(out), "read secrets") {
-		t.Fatalf("expected read-secrets line:\n%s", out)
-	}
-	if strings.Contains(out, "read secrets") && strings.Contains(out, "read secrets") {
-		// ensure denied by default — look for ✗ near secrets
+	if !strings.Contains(out, "read_values") {
+		t.Fatalf("expected read_values line:\n%s", out)
 	}
 	lower := strings.ToLower(out)
 	if !strings.Contains(lower, "expir") {
 		t.Fatalf("expected expiry:\n%s", out)
 	}
-	// read secrets denied
-	if strings.Contains(out, "read secrets") && strings.Contains(out, "✓") {
-		// parse more carefully
-		for _, line := range strings.Split(out, "\n") {
-			l := strings.ToLower(line)
-			if strings.Contains(l, "read secret") && strings.Contains(line, "✓") && !strings.Contains(line, "✗") {
-				t.Fatalf("read secrets should be denied: %s", line)
-			}
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "read_values") && strings.Contains(line, "✓") && !strings.Contains(line, "✗") {
+			t.Fatalf("read_values should be denied by default: %s", line)
 		}
 	}
 

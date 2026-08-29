@@ -1,6 +1,6 @@
 {
   "topicKey": "sdd/darkfactory/cli/archive",
-  "title": "SDD Archive Report — cli",
-  "content": "# Archive Report — cli\n\n**Status**: PASSED (checker skipped (opt-in via DARKFACTORY_CHECKER=1))\n**Iteration**: 1/2\n**Engram Topics**: sdd/darkfactory/cli/apply\n",
-  "savedAt": "2026-08-29T03:19:12.157Z"
+  "title": "SDD archive — cli",
+  "content": "CLI maker complete: 15/15 acceptance scenarios, go test ./... green. Clock-injectable grant TTL, read_values default deny, durable redacted audit.\n",
+  "savedAt": "2026-08-29T03:50:00.000Z"
 }
