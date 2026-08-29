@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/fxckcode/envy/internal/project"
+	"github.com/fxckcode/envy/internal/redact"
 )
 
 // ViewID identifies the active full-screen or overlay surface.
@@ -18,7 +19,6 @@ type ViewID int
 const (
 	ViewDashboard ViewID = iota
 	ViewCompare
-	ViewValidate
 	ViewProviders
 	ViewActivity
 	ViewAdd
@@ -62,7 +62,6 @@ type Model struct {
 	approval  *project.ApprovalRequest
 	quit      bool
 	statusMsg string
-	dirtyForm bool // true while editing unsaved form — discarded on quit without save
 }
 
 // New constructs a TUI model bound to a project.
@@ -153,12 +152,8 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case ViewCompare:
 		return m.handleCompareKey(key)
-	case ViewValidate, ViewProviders, ViewActivity:
-		if key == "esc" {
-			m.view = ViewDashboard
-			return m, nil
-		}
-		if key == "q" {
+	case ViewProviders, ViewActivity:
+		if key == "esc" || key == "q" {
 			m.view = ViewDashboard
 			return m, nil
 		}
@@ -168,7 +163,6 @@ func (m Model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "q", "ctrl+c":
 		m.quit = true
-		m.dirtyForm = false
 		return m, tea.Quit
 	case "tab":
 		if m.focus == FocusEnvs {
@@ -246,11 +240,11 @@ func (m Model) beginAdd() (tea.Model, tea.Cmd) {
 		return m.showBlocked(err.Error())
 	}
 	m.view = ViewAdd
-	m.dirtyForm = true
 	m.formSecret = false
 	m.keyInput.SetValue("")
 	m.valueInput.SetValue("")
 	m.valueInput.EchoMode = textinput.EchoNormal
+	m.valueInput.Placeholder = "value"
 	m.keyInput.Focus()
 	m.valueInput.Blur()
 	return m, nil
@@ -271,16 +265,19 @@ func (m Model) beginEdit() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	m.view = ViewEdit
-	m.dirtyForm = true
 	m.editKey = v.Key
 	m.formSecret = v.Secret
 	m.keyInput.SetValue(v.Key)
 	m.keyInput.Blur()
-	// Never prefill secret cleartext — empty + password echo masks the prior value.
+	// Never prefill secret cleartext. Empty field + password echo + masked
+	// placeholder so the prior value appears masked, not omitted or leaked.
 	m.valueInput.SetValue("")
-	m.valueInput.EchoMode = textinput.EchoPassword
-	if !v.Secret {
+	if v.Secret {
+		m.valueInput.EchoMode = textinput.EchoPassword
+		m.valueInput.Placeholder = redact.Placeholder
+	} else {
 		m.valueInput.EchoMode = textinput.EchoNormal
+		m.valueInput.Placeholder = "value"
 	}
 	m.valueInput.Focus()
 	return m, nil
@@ -476,7 +473,6 @@ func (m Model) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch key {
 	case "esc":
 		m.view = ViewDashboard
-		m.dirtyForm = false
 		m.statusMsg = "edit cancelled"
 		return m, nil
 	case "ctrl+s":
@@ -542,7 +538,6 @@ func (m Model) submitForm() (tea.Model, tea.Cmd) {
 		}
 		m.statusMsg = fmt.Sprintf("updated %s", m.editKey)
 	}
-	m.dirtyForm = false
 	m.view = ViewDashboard
 	return m, nil
 }

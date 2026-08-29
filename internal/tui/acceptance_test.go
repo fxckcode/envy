@@ -220,6 +220,9 @@ func TestScenario6_EditSecretRemasks(t *testing.T) {
 	if strings.Contains(form, "redis://localhost") {
 		t.Fatal("prior secret value visible in editor")
 	}
+	if !strings.Contains(form, redact.Placeholder) {
+		t.Fatal("expected masked prior-value placeholder in secret editor")
+	}
 	for _, r := range "redis://edited" {
 		m = send(m, key(r))
 	}
@@ -304,7 +307,7 @@ func TestScenario9_ValidateStatusArea(t *testing.T) {
 		t.Fatal("secret in validation status")
 	}
 	// Findings live in status area / dashboard footer — not a secret-leaking dump.
-	if m.ViewID() != tui.ViewDashboard && m.ViewID() != tui.ViewValidate {
+	if m.ViewID() != tui.ViewDashboard {
 		t.Fatalf("unexpected view %v", m.ViewID())
 	}
 }
@@ -331,6 +334,8 @@ func TestScenario10_ProvidersView(t *testing.T) {
 // Scenario 11: Agent activity chronological audit with secrets redacted.
 func TestScenario11_AgentActivity(t *testing.T) {
 	m, p := newModel(t)
+	p.AppendAudit("Claude Code", "check", "", "development", project.AuditOK, "schema")
+	p.AppendAudit("Claude Code", "metadata", "REDIS_URL", "development", project.AuditOK, redact.Placeholder)
 	_, _ = p.EnqueueApproval("Claude Code", "development", "PORT", "9", "reason")
 	m = send(m, key('g'))
 	view := m.View()
@@ -339,6 +344,12 @@ func TestScenario11_AgentActivity(t *testing.T) {
 	}
 	if !strings.Contains(view, "Claude Code") {
 		t.Fatal("missing actor")
+	}
+	if !strings.Contains(view, "check") || !strings.Contains(view, "metadata") {
+		t.Fatalf("expected chronological check/metadata rows: %s", view)
+	}
+	if !strings.Contains(view, "development") {
+		t.Fatal("missing env in activity")
 	}
 	if strings.Contains(view, "redis://") {
 		t.Fatal("secret in activity")

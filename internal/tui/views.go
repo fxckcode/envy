@@ -26,8 +26,6 @@ func (m Model) View() string {
 	switch m.view {
 	case ViewCompare:
 		return m.viewCompare()
-	case ViewValidate:
-		return m.viewValidate()
 	case ViewProviders:
 		return m.viewProviders()
 	case ViewActivity:
@@ -162,22 +160,6 @@ func (m Model) viewCompare() string {
 	}
 	b.WriteString("│ [r] refresh  [esc] back\n")
 	b.WriteString("└─\n")
-	return b.String()
-}
-
-func (m Model) viewValidate() string {
-	var b strings.Builder
-	b.WriteString("┌─ Validations ─\n")
-	if len(m.validation.Missing) == 0 && len(m.validation.Invalid) == 0 {
-		b.WriteString("│ " + styleSuccess.Render("✓ all checks passed") + "\n")
-	}
-	for _, f := range m.validation.Missing {
-		b.WriteString(fmt.Sprintf("│ %s missing: %s\n", styleWarn.Render("⚠"), f.Key))
-	}
-	for _, f := range m.validation.Invalid {
-		b.WriteString(fmt.Sprintf("│ %s invalid: %s (%s)\n", styleWarn.Render("⚠"), f.Key, f.Message))
-	}
-	b.WriteString("│ [esc] back\n└─\n")
 	return b.String()
 }
 
