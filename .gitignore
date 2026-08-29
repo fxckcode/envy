@@ -1,0 +1,6 @@
+*.exe
+*.test
+/envy
+bin/
+.DS_Store
+.envy/
