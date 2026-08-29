@@ -24,3 +24,4 @@
 1. `internal/project.Project` — domain operations (load, mutate, compare, validate, doctor, import/export, run, agent grants).
 2. `internal/cli.Execute` — scriptable CLI presentation over Project (list/check/diff/doctor/run/get/set/delete/import/export/agent).
 3. `internal/tui.Model` — keyboard-driven view state via Bubble Tea `Update`/`View`.
+4. `internal/mcpapi.Service` — agent MCP tools with least-privilege permissions, secret redaction (`[REDACTED]`), and audit.

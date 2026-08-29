@@ -3,6 +3,8 @@ package project
 import (
 	"fmt"
 	"sort"
+
+	"github.com/fxckcode/envy/internal/redact"
 )
 
 // Compare builds a presence/diff matrix between two environments.
@@ -95,6 +97,13 @@ func valuesDiverge(present []string, values map[string]string) bool {
 	return false
 }
 
+func safeCellValue(raw string, secret bool) string {
+	if secret {
+		return redact.MCPPlaceholder
+	}
+	return raw
+}
+
 func compareCellFor(env string, values map[string]string, secret, divergent, partial bool) CompareCell {
 	v, ok := values[env]
 	switch {
@@ -102,13 +111,13 @@ func compareCellFor(env string, values map[string]string, secret, divergent, par
 		return CompareCell{Kind: CellAbsent, Display: "✗"}
 	case divergent:
 		if secret {
-			return CompareCell{Kind: CellDiff, Display: "≠"}
+			return CompareCell{Kind: CellDiff, Display: "≠", Value: safeCellValue(v, true)}
 		}
-		return CompareCell{Kind: CellDiff, Display: v}
+		return CompareCell{Kind: CellDiff, Display: v, Value: v}
 	case partial:
-		return CompareCell{Kind: CellOnly, Display: "◇"}
+		return CompareCell{Kind: CellOnly, Display: "◇", Value: safeCellValue(v, secret)}
 	default:
-		return CompareCell{Kind: CellPresent, Display: "✓"}
+		return CompareCell{Kind: CellPresent, Display: "✓", Value: safeCellValue(v, secret)}
 	}
 }
 

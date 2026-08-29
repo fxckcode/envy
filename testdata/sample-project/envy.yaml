@@ -12,6 +12,72 @@ environments:
     provider: aws-secrets-manager
     path: sample-api/production
 
+agents:
+  default:
+    development:
+      metadata: true
+      read_values: false
+      write: false
+      delete: false
+    staging:
+      metadata: true
+      read_values: false
+      write: false
+      delete: false
+    production:
+      metadata: true
+      read_values: false
+      write: false
+      delete: false
+  writer-agent:
+    development:
+      metadata: true
+      read_values: false
+      write: true
+      delete: true
+    staging:
+      metadata: true
+      read_values: false
+      write: false
+      delete: false
+    production:
+      metadata: true
+      read_values: false
+      write: false
+      delete: false
+  write-only-agent:
+    development:
+      metadata: true
+      read_values: false
+      write: true
+      delete: false
+    staging:
+      metadata: true
+      read_values: false
+      write: false
+      delete: false
+    production:
+      metadata: true
+      read_values: false
+      write: false
+      delete: false
+  reader-agent:
+    development:
+      metadata: true
+      read_values: true
+      write: true
+      delete: false
+    staging:
+      metadata: true
+      read_values: false
+      write: false
+      delete: false
+    production:
+      metadata: true
+      read_values: false
+      write: false
+      delete: false
+
 schema:
   DATABASE_URL:
     required: true
@@ -21,12 +87,19 @@ schema:
     required: true
     secret: true
     type: url
+  SENTRY_DSN:
+    required: true
+    secret: true
+    type: url
   AWS_REGION:
     required: true
     type: string
   PORT:
     required: true
     type: integer
+    default: "3000"
+    min: 1
+    max: 65535
   DEBUG:
     required: false
     type: boolean
@@ -34,3 +107,9 @@ schema:
     required: true
     secret: true
     type: string
+  NODE_ENV:
+    type: enum
+    values:
+      - development
+      - staging
+      - production
