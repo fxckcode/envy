@@ -56,5 +56,6 @@ Agent-facing tools (`env_list`, `env_check`, `env_diff`, `env_metadata`, `env_se
 | `v` | Run validations (status area) |
 | `p` | View providers |
 | `g` | Agent activity |
+| `A` | Open pending agent approval |
 | `q` | Quit |
 | `tab` | Cycle focus |
