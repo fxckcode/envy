@@ -99,7 +99,7 @@ const (
 // CompareCell is one matrix cell (no cleartext secrets).
 type CompareCell struct {
 	Kind    CellKind `json:"kind"`
-	Display string   `json:"display"` // glyph or non-secret value — never secret cleartext
+	Display string   `json:"display"`         // glyph or non-secret value — never secret cleartext
 	Value   string   `json:"value,omitempty"` // non-secret cleartext or [REDACTED]
 }
 

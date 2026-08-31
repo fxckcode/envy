@@ -85,13 +85,13 @@ func New(p *project.Project) Model {
 	vi.EchoCharacter = '•'
 
 	return Model{
-		proj:     p,
-		width:    100,
-		height:   30,
-		view:     ViewDashboard,
-		focus:    FocusVars,
-		envIdx:   envIdx,
-		keyInput: ki,
+		proj:       p,
+		width:      100,
+		height:     30,
+		view:       ViewDashboard,
+		focus:      FocusVars,
+		envIdx:     envIdx,
+		keyInput:   ki,
 		valueInput: vi,
 	}
 }

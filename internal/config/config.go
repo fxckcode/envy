@@ -22,10 +22,10 @@ type SchemaField struct {
 
 // Environment declares where an environment's values live.
 type Environment struct {
-	File     string `yaml:"file"`
-	Provider string `yaml:"provider"`
-	Path     string `yaml:"path"`
-	Protected bool  `yaml:"protected"`
+	File      string `yaml:"file"`
+	Provider  string `yaml:"provider"`
+	Path      string `yaml:"path"`
+	Protected bool   `yaml:"protected"`
 }
 
 // AgentPerms are per-environment agent permissions.
@@ -38,10 +38,10 @@ type AgentPerms struct {
 
 // Config is the root envy.yaml document.
 type Config struct {
-	Version      int                           `yaml:"version"`
-	ProjectName  string                        `yaml:"project"`
-	Environments map[string]Environment        `yaml:"environments"`
-	Schema       map[string]SchemaField        `yaml:"schema"`
+	Version      int                              `yaml:"version"`
+	ProjectName  string                           `yaml:"project"`
+	Environments map[string]Environment           `yaml:"environments"`
+	Schema       map[string]SchemaField           `yaml:"schema"`
 	Agents       map[string]map[string]AgentPerms `yaml:"agents"`
 }
 
