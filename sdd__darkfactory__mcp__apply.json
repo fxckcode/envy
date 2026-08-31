@@ -1,6 +1,0 @@
-{
-  "topicKey": "sdd/darkfactory/mcp/apply",
-  "title": "SDD apply — mcp",
-  "content": "Implemented the full Envy MCP surface on the existing CLI/TUI starter. All 15 acceptance scenarios pass (`go test ./...`).\n\n**Seam:** `internal/mcpapi.Service` — agent tools with least-privilege ACL, `[REDACTED]` secrets, and audit.\n\n**Added**\n- `cmd/envy-mcp` — stdio MCP server (`ENVY_ROOT`, `ENVY_AGENT`)\n- `internal/mcpapi` — tools: list/check/diff/exists/metadata/read/set/delete/copy/schema/example/doctor + audit\n- `internal/mcpserver` — MCP tool registration\n- `internal/project/mcp_ops.go` — AgentPerms, Exists, Metadata, Copy, GenerateExample, etc.\n\n**Policy behavior:** default = metadata only; secret plaintext denied; writes apply or queue approval; production write → unauthorized; deletes need delete perm; every call audited without secret plaintext.\n\n**Commit:** `17cdae4` — `feat(mcp): implement agent MCP surface with redaction and ACL`Those background filesystem searches exited with errors (they were long `find` sweeps that got interrupted). They weren’t needed — the MCP implementation was finished from the prior archive and committed as `17cdae4`.\n",
-  "savedAt": "2026-08-29T03:37:16.996Z"
-}

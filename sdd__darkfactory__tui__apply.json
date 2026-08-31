@@ -1,6 +1,0 @@
-{
-  "topicKey": "sdd/darkfactory/tui/apply",
-  "title": "SDD apply — tui",
-  "content": "All **15 TUI acceptance scenarios** are implemented and green (`go test ./...`). Built on the existing starter (Bubble Tea + `internal/project` seam).\n\n### Surface\n- Dashboard: project name, `ENV:`, variables, status footer\n- Secrets masked (`●●●●●●●●`); secret edit shows `********` prior placeholder\n- Add / edit / delete (`y` confirm); compare across all envs; `v` validation in status area\n- Providers, agent activity, approval modal (Allow once / Allow for project / Deny)\n\n### Review (post-polish)\n\n## Standards\n- Removed dead `ViewValidate`; validations stay on the dashboard status line\n- Documented `A` (pending approval) in README\n- Remaining judgement: Bubble Tea in-place model updates (idiomatic); `project.go` still large\n\n## Spec\n- All 15 covered by `internal/tui/acceptance_test.go`\n- Scenario 6: prior secret now masked via placeholder (not omitted)\n- Scenario 11: seeds check + metadata audit rows\n- Intentional: proposed new values shown cleartext in approval modal\n\n**Commit:** `dd3b356` — `fix(tui): tighten secret-edit mask and agent activity coverage`\n",
-  "savedAt": "2026-08-29T03:58:21.246Z"
-}

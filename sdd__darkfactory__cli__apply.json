@@ -1,6 +1,0 @@
-{
-  "topicKey": "sdd/darkfactory/cli/apply",
-  "title": "SDD apply — cli",
-  "content": "All **15 CLI acceptance scenarios** are implemented and green on the existing starter (`go test ./...`).\n\n### Surface\n`list` · `check` (`--ci`) · `doctor` · `diff` · `run` · `get`/`set`/`delete` · `import`/`export` (`--reveal`) · `agent grant`/`revoke`\n\nSecrets stay redacted by default. Agent writes need `--as-agent` + an active grant (TTL-enforced). Mutations append to `.envy/audit.jsonl` without plaintext secrets.\n\n### This pass\n- Aligned acceptance tests to SDD wording (`--env development`, bare `check` + `PORT=abc`, list presence after set/delete)\n- CLI-level grant TTL expiry denial (`TestAgentGrantExpiresViaCLI`)\n- Import/grant/revoke audit rows carry a key token\n\n### Code review\n\n## Standards\n- Soft: some CLI handlers >50 lines; audit persist errors still soft-fail\n- Judgement: flag-parser duplication; list-line presence checks duplicated in tests\n\n## Spec\n- All 15 scenarios covered at the CLI seam\n- Partials: doctor gitignore is warn without `.git` (fail with `.git` — covered); deleted required keys still listed as ⚠ missing\n\n**Summary:** Standards ~3 soft · Spec 0 blocking.\n\nCommitted as `5d3bea6`.\n",
-  "savedAt": "2026-08-29T04:04:20.860Z"
-}
