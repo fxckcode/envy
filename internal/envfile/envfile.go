@@ -5,12 +5,13 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
 
 // Vars is an ordered map of environment variable bindings.
 type Vars struct {
-	order []string
+	order  []string
 	values map[string]string
 }
 
@@ -64,7 +65,12 @@ func splitKV(line string) (string, string, bool) {
 
 func unquote(s string) string {
 	if len(s) >= 2 {
-		if (s[0] == '"' && s[len(s)-1] == '"') || (s[0] == '\'' && s[len(s)-1] == '\'') {
+		if s[0] == '"' && s[len(s)-1] == '"' {
+			if unquoted, err := strconv.Unquote(s); err == nil {
+				return unquoted
+			}
+		}
+		if s[0] == '\'' && s[len(s)-1] == '\'' {
 			return s[1 : len(s)-1]
 		}
 	}
@@ -126,15 +132,19 @@ func (v *Vars) WriteFile(path string) error {
 	var b strings.Builder
 	for _, k := range v.order {
 		val := v.values[k]
-		if needsQuote(val) {
-			b.WriteString(fmt.Sprintf("%s=%q\n", k, val))
-		} else {
-			b.WriteString(fmt.Sprintf("%s=%s\n", k, val))
-		}
+		b.WriteString(fmt.Sprintf("%s=%s\n", k, FormatValue(val)))
 	}
 	return os.WriteFile(path, []byte(b.String()), 0o600)
 }
 
 func needsQuote(s string) bool {
-	return strings.ContainsAny(s, " \t#\"'")
+	return strings.ContainsAny(s, " 	#\"'\\\r\n")
+}
+
+// FormatValue returns a dotenv-safe value, escaping quoted content as needed.
+func FormatValue(s string) string {
+	if needsQuote(s) {
+		return strconv.Quote(s)
+	}
+	return s
 }

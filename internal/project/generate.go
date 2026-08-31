@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/fxckcode/envy/internal/config"
+	"github.com/fxckcode/envy/internal/envfile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -33,7 +34,11 @@ func (p *Project) GenerateSchema() (int, error) {
 	}
 	// Preserve explicit existing schema markers where present.
 	for key, existing := range p.cfg.Schema {
-		discovered[key] = mergeSchemaField(discovered[key], existing)
+		merged := mergeSchemaField(discovered[key], existing)
+		// An existing schema declaration is authoritative, including explicit
+		// optionality (required: false).
+		merged.Required = existing.Required
+		discovered[key] = merged
 	}
 	if len(discovered) == 0 {
 		return 0, fmt.Errorf("no environment keys found to generate schema")
@@ -48,7 +53,10 @@ func (p *Project) GenerateSchema() (int, error) {
 }
 
 func inferSchemaField(key, value string) config.SchemaField {
-	f := config.SchemaField{Required: true, Type: "string"}
+	// Discovery cannot establish a requirement from a key appearing in one
+	// environment. Non-empty values are the useful signal; empty bindings are
+	// preserved as optional until a human declares them required.
+	f := config.SchemaField{Required: value != "", Type: "string"}
 	lower := strings.ToLower(key)
 	if secretNameHint.MatchString(key) || strings.Contains(lower, "dsn") {
 		f.Secret = true
@@ -138,7 +146,7 @@ func (p *Project) WriteExampleFile() (string, error) {
 	sort.Strings(keys)
 	var b strings.Builder
 	for _, k := range keys {
-		fmt.Fprintf(&b, "%s=%s\n", k, payload[k])
+		fmt.Fprintf(&b, "%s=%s\n", k, envfile.FormatValue(payload[k]))
 	}
 	path := filepath.Join(p.Root(), ".env.example")
 	if err := os.WriteFile(path, []byte(b.String()), 0o644); err != nil {
@@ -156,14 +164,16 @@ fail=0
 for f in $staged; do
   base=$(basename "$f")
   case "$base" in
-    .env|.env.local|.env.development|.env.staging|.env.production)
+    .env.example)
+      ;;
+    .env|.env.*)
       echo "envy: refusing to commit $f (environment secrets file)" >&2
       fail=1
       ;;
   esac
   case "$base" in
     .env.example|README.md|README|*.md)
-      if git diff --cached -U0 -- "$f" | grep -Eiq '^\+.*(postgres://|mysql://|mongodb(\+srv)?://|redis://[^[:space:]]+:[^[:space:]]+@|AKIA[0-9A-Z]{16}|sk_live_|sk_test_[A-Za-z0-9]{8,})'; then
+      if git diff --cached -U0 -- "$f" | grep -Eiq '^\+.*(postgres://[^ ]+@|mysql://[^ ]+@|AKIA[0-9A-Z]{16}|sk_live_|sk_test_[A-Za-z0-9]{8,})'; then
         echo "envy: refusing to commit possible secret material in $f" >&2
         fail=1
       fi
@@ -187,7 +197,12 @@ func (p *Project) InstallHooks() (string, error) {
 	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
 		return "", err
 	}
-	path := filepath.Join(hooksDir, "pre-commit")
+	path := filepath.Join(gitDir, "hooks", "pre-commit")
+	if _, err := os.Lstat(path); err == nil {
+		return "", fmt.Errorf("pre-commit hook already exists; refusing to overwrite %s", path)
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("check existing pre-commit hook: %w", err)
+	}
 	if err := os.WriteFile(path, []byte(preCommitHook), 0o755); err != nil {
 		return "", err
 	}

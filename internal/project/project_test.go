@@ -395,3 +395,48 @@ func TestAgentGrantExpiresAndDeniesWrite(t *testing.T) {
 		t.Fatalf("expired write must not persist: %q", val)
 	}
 }
+
+func TestWriteOnlyAgentCannotDeleteVariable(t *testing.T) {
+	p := openSample(t)
+	if _, err := p.GrantAgent("write-only", "development", true, false, false, time.Hour); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+	before, ok := p.RawValue("development", "PORT")
+	if !ok {
+		t.Fatal("expected PORT fixture")
+	}
+	if err := p.DeleteVariableAsAgent("write-only", "PORT"); err == nil {
+		t.Fatal("write-only grant must not authorize delete")
+	}
+	after, ok := p.RawValue("development", "PORT")
+	if !ok || after != before {
+		t.Fatalf("PORT changed after denied delete: %q -> %q", before, after)
+	}
+}
+
+func TestInstallHooksPreservesExistingPreCommit(t *testing.T) {
+	root := sampleRoot(t)
+	p, err := project.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hooks := filepath.Join(root, ".git", "hooks")
+	if err := os.MkdirAll(hooks, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	hook := filepath.Join(hooks, "pre-commit")
+	original := []byte("#!/bin/sh\necho existing\n")
+	if err := os.WriteFile(hook, original, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.InstallHooks(); err == nil || !strings.Contains(err.Error(), "refusing to overwrite") {
+		t.Fatalf("expected clear existing-hook refusal, got %v", err)
+	}
+	got, err := os.ReadFile(hook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("existing hook was modified: %q", got)
+	}
+}

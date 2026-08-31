@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -176,14 +177,14 @@ func (p *Project) authorizeMutationLocked(actor, action, key, env string, delete
 		denied := !ok || p.now().After(g.ExpiresAt) || g.Environment != env
 		if !denied {
 			if deleteOp {
-				denied = !(g.Delete || g.Write)
+				denied = !g.Delete
 			} else {
 				denied = !g.Write
 			}
 		}
 		if denied {
 			p.appendAuditLocked(actor, action, key, env, AuditDenied, "no active grant")
-			return fmt.Errorf("agent write denied: no active grant for %q on %q", actor, env)
+			return fmt.Errorf("agent %s denied: no active grant for %q on %q", action, actor, env)
 		}
 	}
 	if err := p.guardWriteLocked(env); err != nil {
@@ -374,9 +375,9 @@ func looksLikeSecretValue(v string) bool {
 	if strings.HasPrefix(strings.ToUpper(v), "AKIA") {
 		return true
 	}
-	if strings.Contains(low, "://") && (strings.Contains(low, "password") || strings.Contains(v, "@")) {
-		// URL with userinfo often indicates credentials.
-		if strings.Contains(v, "@") && strings.Contains(v, "://") {
+	if strings.Contains(v, "://") {
+		// Any URL userinfo is credential material, including normal MySQL URLs.
+		if parsed, err := url.Parse(v); err == nil && parsed.User != nil {
 			return true
 		}
 	}
@@ -658,7 +659,7 @@ func (p *Project) HasAgentDelete(agent, env string) bool {
 	if g.Environment != env {
 		return false
 	}
-	return g.Delete || g.Write
+	return g.Delete
 }
 
 func (p *Project) persistGrantsLocked() error {

@@ -170,8 +170,7 @@ func (p *Project) DeleteInEnv(env, key, actor string) error {
 	if _, ok := p.envs[env]; !ok {
 		return fmt.Errorf("unknown environment %q", env)
 	}
-	if err := p.guardWriteLocked(env); err != nil {
-		p.appendAuditLocked(actor, "env_delete", key, env, AuditDenied, "protected")
+	if err := p.authorizeMutationLocked(actor, "env_delete", key, env, true); err != nil {
 		return err
 	}
 	if _, ok := p.envs[env].Get(key); !ok {
