@@ -29,27 +29,22 @@ func main() {
 		rest = append(rest, a)
 	}
 
-	// No subcommand → launch TUI (legacy path also accepts bare project path).
+	// No subcommand → launch TUI.
 	if len(rest) == 0 {
 		runTUI(dir)
 		return
 	}
-	if len(rest) == 1 && !isCommand(rest[0]) {
-		runTUI(rest[0])
-		return
+	if len(rest) == 1 && !cli.KnownCommand(rest[0]) {
+		if cli.LooksLikeProjectPath(rest[0]) {
+			runTUI(rest[0])
+			return
+		}
+		fmt.Fprintf(os.Stderr, "envy: unknown command %q\n", rest[0])
+		os.Exit(2)
 	}
 
 	code := cli.Execute(append([]string{"--dir", dir}, rest...), os.Stdout, os.Stderr)
 	os.Exit(code)
-}
-
-func isCommand(s string) bool {
-	switch s {
-	case "list", "check", "doctor", "diff", "run", "get", "set", "delete", "import", "export", "agent", "help", "-h", "--help":
-		return true
-	default:
-		return false
-	}
 }
 
 func runTUI(root string) {

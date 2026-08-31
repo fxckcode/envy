@@ -584,3 +584,190 @@ func TestNoConfigClearError(t *testing.T) {
 		t.Fatal("mutating without config should fail")
 	}
 }
+
+func TestRejectUnknownFlags(t *testing.T) {
+	root := sampleRoot(t)
+
+	out, errOut, code := runCLI(t, root, "check", "--bogus")
+	if code == 0 {
+		t.Fatalf("check --bogus should fail, out=%s err=%s", out, errOut)
+	}
+	if !strings.Contains(strings.ToLower(out+errOut), "unknown") && !strings.Contains(strings.ToLower(out+errOut), "flag") {
+		t.Fatalf("expected unknown-flag message: %s", out+errOut)
+	}
+
+	out, errOut, code = runCLI(t, root, "list", "--env")
+	if code == 0 {
+		t.Fatalf("list --env without value should fail, out=%s err=%s", out, errOut)
+	}
+
+	out, errOut, code = runCLI(t, root, "set", "FOO", "bar", "--bogus")
+	if code == 0 {
+		t.Fatalf("set with --bogus should fail, out=%s err=%s", out, errOut)
+	}
+	raw, _ := os.ReadFile(filepath.Join(root, ".env"))
+	if strings.Contains(string(raw), "FOO=") {
+		t.Fatalf("rejected set must not persist FOO: %s", raw)
+	}
+
+	out, errOut, code = runCLI(t, root, "delete", "REDIS_URL", "--bogus")
+	if code == 0 {
+		t.Fatalf("delete with --bogus should fail, out=%s err=%s", out, errOut)
+	}
+	raw, _ = os.ReadFile(filepath.Join(root, ".env"))
+	if !strings.Contains(string(raw), "REDIS_URL=") {
+		t.Fatal("rejected delete must leave REDIS_URL intact")
+	}
+
+	out, errOut, code = runCLI(t, root, "get", "REDIS_URL", "--unexpected")
+	if code == 0 {
+		t.Fatalf("get with unknown flag should fail, out=%s err=%s", out, errOut)
+	}
+}
+
+func TestHelpWorksWithoutProject(t *testing.T) {
+	empty := t.TempDir()
+	for _, args := range [][]string{{"help"}, {"--help"}, {"-h"}} {
+		out, errOut, code := runCLI(t, empty, args...)
+		if code != 0 {
+			t.Fatalf("%v exit=%d out=%s err=%s", args, code, out, errOut)
+		}
+		combined := out + errOut
+		if !strings.Contains(combined, "list") || !strings.Contains(combined, "check") {
+			t.Fatalf("help should list commands: %s", combined)
+		}
+	}
+}
+
+func TestSchemaGenerateAddsKeysWithoutSecrets(t *testing.T) {
+	root := sampleRoot(t)
+	yamlPath := filepath.Join(root, "envy.yaml")
+	// Strip schema so generate must rediscover from env files.
+	data, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	idx := strings.Index(string(data), "\nschema:")
+	if idx < 0 {
+		t.Fatal("expected schema section")
+	}
+	if err := os.WriteFile(yamlPath, []byte(string(data)[:idx]+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := project.Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Config().Schema) != 0 {
+		t.Fatalf("expected empty schema after strip, got %#v", p.Config().Schema)
+	}
+
+	out, errOut, code := runCLI(t, root, "schema", "generate")
+	if code != 0 {
+		t.Fatalf("schema generate exit=%d out=%s err=%s", code, out, errOut)
+	}
+	combined := out + errOut
+	if strings.Contains(combined, "postgres://") || strings.Contains(combined, "sk_test") {
+		t.Fatalf("schema generate leaked secrets: %s", combined)
+	}
+	cfgData, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(cfgData)
+	if !strings.Contains(text, "REDIS_URL:") || !strings.Contains(text, "secret: true") {
+		t.Fatalf("expected generated secret schema:\n%s", text)
+	}
+	if strings.Contains(text, "postgres://") || strings.Contains(text, "sk_test") {
+		t.Fatalf("envy.yaml must not embed secret values:\n%s", text)
+	}
+}
+
+func TestExampleGenerateWritesEnvExample(t *testing.T) {
+	root := sampleRoot(t)
+	out, errOut, code := runCLI(t, root, "example", "generate")
+	if code != 0 {
+		t.Fatalf("example generate exit=%d out=%s err=%s", code, out, errOut)
+	}
+	examplePath := filepath.Join(root, ".env.example")
+	data, err := os.ReadFile(examplePath)
+	if err != nil {
+		t.Fatalf("expected .env.example: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, "DATABASE_URL=") || !strings.Contains(text, "PORT=") {
+		t.Fatalf("expected schema keys in example:\n%s", text)
+	}
+	if strings.Contains(text, "postgres://") || strings.Contains(text, "sk_test") || strings.Contains(text, "redis://") {
+		t.Fatalf("example must not include live secrets:\n%s", text)
+	}
+	if !strings.Contains(text, "PORT=3000") {
+		t.Fatalf("non-secret defaults should appear: %s", text)
+	}
+}
+
+func TestHooksInstallPreCommit(t *testing.T) {
+	root := sampleRoot(t)
+	gitDir := filepath.Join(root, ".git")
+	if err := os.MkdirAll(filepath.Join(gitDir, "hooks"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, errOut, code := runCLI(t, root, "hooks", "install")
+	if code != 0 {
+		t.Fatalf("hooks install exit=%d out=%s err=%s", code, out, errOut)
+	}
+	hook := filepath.Join(gitDir, "hooks", "pre-commit")
+	data, err := os.ReadFile(hook)
+	if err != nil {
+		t.Fatalf("expected pre-commit hook: %v", err)
+	}
+	text := string(data)
+	if !strings.Contains(text, ".env") {
+		t.Fatalf("hook should guard .env staging:\n%s", text)
+	}
+	info, err := os.Stat(hook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode()&0o111 == 0 {
+		t.Fatalf("hook must be executable, mode=%v", info.Mode())
+	}
+}
+
+func TestAgentSessionStartGrantsWrite(t *testing.T) {
+	root := sampleRoot(t)
+	out, errOut, code := runCLI(t, root, "agent", "session", "start", "claude-code", "--env", "development", "--ttl", "30m")
+	if code != 0 {
+		t.Fatalf("session start exit=%d out=%s err=%s", code, out, errOut)
+	}
+	combined := out + errOut
+	if !strings.Contains(combined, "write") || !strings.Contains(combined, "✓") {
+		t.Fatalf("expected write grant display:\n%s", combined)
+	}
+	_, _, code = runCLI(t, root, "set", "--as-agent", "claude-code", "--env", "development", "REDIS_URL", "redis://session:6379")
+	if code != 0 {
+		t.Fatalf("agent write under session should succeed, exit=%d", code)
+	}
+	raw, err := os.ReadFile(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(raw), "redis://session:6379") {
+		t.Fatalf("session write not persisted: %s", raw)
+	}
+}
+
+func TestKnownCommandAndPathHeuristics(t *testing.T) {
+	if !cli.KnownCommand("list") || !cli.KnownCommand("schema") || !cli.KnownCommand("hooks") {
+		t.Fatal("expected known commands")
+	}
+	if cli.KnownCommand("not-a-command") {
+		t.Fatal("unknown token should not be a command")
+	}
+	if cli.LooksLikeProjectPath("not-a-command") {
+		t.Fatal("plain unknown token must not look like a project path")
+	}
+	if !cli.LooksLikeProjectPath("./testdata") && !cli.LooksLikeProjectPath("/tmp") {
+		t.Fatal("path-like args should be recognized")
+	}
+}

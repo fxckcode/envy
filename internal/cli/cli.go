@@ -32,15 +32,25 @@ func Execute(args []string, stdout, stderr io.Writer) int {
 		filtered = append(filtered, a)
 	}
 	if len(filtered) == 0 {
-		fmt.Fprintln(stderr, "usage: envy <command> [args]")
-		fmt.Fprintln(stderr, "commands: list, check, doctor, diff, run, get, set, delete, import, export, agent")
+		printUsage(stderr)
 		return 2
 	}
 
 	cmd := filtered[0]
 	rest := filtered[1:]
 
-	// Commands that need a project.
+	switch cmd {
+	case "help", "-h", "--help":
+		printUsage(stdout)
+		return 0
+	}
+
+	if !KnownCommand(cmd) {
+		fmt.Fprintf(stderr, "envy: unknown command %q\n", cmd)
+		printUsage(stderr)
+		return 2
+	}
+
 	p, err := project.Open(dir)
 	if err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
@@ -70,28 +80,22 @@ func Execute(args []string, stdout, stderr io.Writer) int {
 		return cmdExport(p, rest, stdout, stderr)
 	case "agent":
 		return cmdAgent(p, rest, stdout, stderr)
+	case "schema":
+		return cmdSchema(p, rest, stdout, stderr)
+	case "example":
+		return cmdExample(p, rest, stdout, stderr)
+	case "hooks":
+		return cmdHooks(p, rest, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "envy: unknown command %q\n", cmd)
 		return 2
 	}
 }
 
-func parseEnvFlag(args []string) (env string, rest []string) {
-	rest = make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--env" && i+1 < len(args) {
-			env = args[i+1]
-			i++
-			continue
-		}
-		if strings.HasPrefix(a, "--env=") {
-			env = strings.TrimPrefix(a, "--env=")
-			continue
-		}
-		rest = append(rest, a)
-	}
-	return env, rest
+func printUsage(w io.Writer) {
+	fmt.Fprintln(w, "usage: envy <command> [args]")
+	fmt.Fprintln(w, "commands: list, check, doctor, diff, run, get, set, delete, import, export,")
+	fmt.Fprintln(w, "          agent, schema, example, hooks, help")
 }
 
 func ensureEnv(p *project.Project, env string) error {
@@ -102,8 +106,16 @@ func ensureEnv(p *project.Project, env string) error {
 }
 
 func cmdList(p *project.Project, args []string, stdout, stderr io.Writer) int {
-	env, rest := parseEnvFlag(args)
-	_ = rest
+	_, vals, positionals, err := parseFlags(args, nil, []string{"env"})
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
+	}
+	if len(positionals) > 0 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[0])
+		return 2
+	}
+	env := vals["env"]
 	if err := ensureEnv(p, env); err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
 		return 1
@@ -138,17 +150,17 @@ func cmdList(p *project.Project, args []string, stdout, stderr io.Writer) int {
 }
 
 func cmdCheck(p *project.Project, args []string, stdout, stderr io.Writer) int {
-	env, rest := parseEnvFlag(args)
-	ci := false
-	filtered := make([]string, 0, len(rest))
-	for _, a := range rest {
-		if a == "--ci" {
-			ci = true
-			continue
-		}
-		filtered = append(filtered, a)
+	bools, vals, positionals, err := parseFlags(args, []string{"ci"}, []string{"env"})
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
 	}
-	_ = filtered
+	if len(positionals) > 0 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[0])
+		return 2
+	}
+	env := vals["env"]
+	ci := bools["ci"]
 	if env == "" {
 		env = p.ActiveEnvironment()
 	}
@@ -195,8 +207,15 @@ func cmdCheck(p *project.Project, args []string, stdout, stderr io.Writer) int {
 }
 
 func cmdDoctor(p *project.Project, args []string, stdout, stderr io.Writer) int {
-	_ = args
-	_ = stderr
+	_, _, positionals, err := parseFlags(args, nil, nil)
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
+	}
+	if len(positionals) > 0 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[0])
+		return 2
+	}
 	res := p.Doctor()
 	fmt.Fprintln(stdout, "ENVIRONMENT HEALTH")
 	fmt.Fprintln(stdout)
@@ -214,7 +233,6 @@ func cmdDoctor(p *project.Project, args []string, stdout, stderr io.Writer) int 
 		}
 		line := fmt.Sprintf("%s %s", glyph, c.Label)
 		if c.Detail != "" && c.Status != project.DoctorPass {
-			// For leak checks, label already names the key; still avoid values.
 			if c.Status == project.DoctorFail && strings.Contains(c.Label, "found in") {
 				fmt.Fprintln(stdout, line)
 				continue
@@ -230,11 +248,20 @@ func cmdDoctor(p *project.Project, args []string, stdout, stderr io.Writer) int 
 }
 
 func cmdDiff(p *project.Project, args []string, stdout, stderr io.Writer) int {
-	if len(args) < 2 {
+	_, _, positionals, err := parseFlags(args, nil, nil)
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
+	}
+	if len(positionals) < 2 {
 		fmt.Fprintln(stderr, "usage: envy diff <left> <right>")
 		return 2
 	}
-	left, right := args[0], args[1]
+	if len(positionals) > 2 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[2])
+		return 2
+	}
+	left, right := positionals[0], positionals[1]
 	res, err := p.Diff(left, right)
 	if err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
@@ -295,25 +322,24 @@ func cmdRun(p *project.Project, args []string, stdout, stderr io.Writer) int {
 }
 
 func cmdGet(p *project.Project, args []string, stdout, stderr io.Writer) int {
-	env, rest := parseEnvFlag(args)
-	reveal := false
-	filtered := make([]string, 0, len(rest))
-	for _, a := range rest {
-		if a == "--reveal" {
-			reveal = true
-			continue
-		}
-		filtered = append(filtered, a)
+	bools, vals, positionals, err := parseFlags(args, []string{"reveal"}, []string{"env"})
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
 	}
-	if len(filtered) < 1 {
+	if len(positionals) < 1 {
 		fmt.Fprintln(stderr, "usage: envy get [--env name] [--reveal] <KEY>")
 		return 2
 	}
-	if err := ensureEnv(p, env); err != nil {
+	if len(positionals) > 1 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[1])
+		return 2
+	}
+	if err := ensureEnv(p, vals["env"]); err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
 		return 1
 	}
-	val, _, err := p.GetVariable(filtered[0], reveal)
+	val, _, err := p.GetVariable(positionals[0], bools["reveal"])
 	if err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
 		return 1
@@ -322,37 +348,22 @@ func cmdGet(p *project.Project, args []string, stdout, stderr io.Writer) int {
 	return 0
 }
 
-func parseAsAgentFlag(args []string) (agent string, rest []string) {
-	rest = make([]string, 0, len(args))
-	for i := 0; i < len(args); i++ {
-		a := args[i]
-		if a == "--as-agent" && i+1 < len(args) {
-			agent = args[i+1]
-			i++
-			continue
-		}
-		if strings.HasPrefix(a, "--as-agent=") {
-			agent = strings.TrimPrefix(a, "--as-agent=")
-			continue
-		}
-		rest = append(rest, a)
-	}
-	return agent, rest
-}
-
 func cmdSet(p *project.Project, args []string, stdout, stderr io.Writer) int {
-	env, rest := parseEnvFlag(args)
-	agent, filtered := parseAsAgentFlag(rest)
-	if len(filtered) < 2 {
+	_, vals, positionals, err := parseFlags(args, nil, []string{"env", "as-agent"})
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
+	}
+	if len(positionals) < 2 {
 		fmt.Fprintln(stderr, "usage: envy set [--env name] [--as-agent id] <KEY> <value>")
 		return 2
 	}
-	if err := ensureEnv(p, env); err != nil {
+	if err := ensureEnv(p, vals["env"]); err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
 		return 1
 	}
-	key, value := filtered[0], strings.Join(filtered[1:], " ")
-	var err error
+	key, value := positionals[0], strings.Join(positionals[1:], " ")
+	agent := vals["as-agent"]
 	if agent != "" {
 		err = p.SetVariableAsAgent(agent, key, value)
 	} else {
@@ -367,43 +378,57 @@ func cmdSet(p *project.Project, args []string, stdout, stderr io.Writer) int {
 }
 
 func cmdDelete(p *project.Project, args []string, stdout, stderr io.Writer) int {
-	env, rest := parseEnvFlag(args)
-	agent, filtered := parseAsAgentFlag(rest)
-	if len(filtered) < 1 {
+	_, vals, positionals, err := parseFlags(args, nil, []string{"env", "as-agent"})
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
+	}
+	if len(positionals) < 1 {
 		fmt.Fprintln(stderr, "usage: envy delete [--env name] [--as-agent id] <KEY>")
 		return 2
 	}
-	if err := ensureEnv(p, env); err != nil {
+	if len(positionals) > 1 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[1])
+		return 2
+	}
+	if err := ensureEnv(p, vals["env"]); err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
 		return 1
 	}
-	var err error
+	agent := vals["as-agent"]
 	if agent != "" {
-		err = p.DeleteVariableAsAgent(agent, filtered[0])
+		err = p.DeleteVariableAsAgent(agent, positionals[0])
 	} else {
-		err = p.DeleteVariable(filtered[0])
+		err = p.DeleteVariable(positionals[0])
 	}
 	if err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "deleted %s\n", filtered[0])
+	fmt.Fprintf(stdout, "deleted %s\n", positionals[0])
 	return 0
 }
 
 func cmdImport(p *project.Project, args []string, stdout, stderr io.Writer) int {
-	env, rest := parseEnvFlag(args)
-	if len(rest) < 1 {
+	_, vals, positionals, err := parseFlags(args, nil, []string{"env"})
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
+	}
+	if len(positionals) < 1 {
 		fmt.Fprintln(stderr, "usage: envy import [--env name] <file>")
 		return 2
 	}
-	if err := ensureEnv(p, env); err != nil {
+	if len(positionals) > 1 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[1])
+		return 2
+	}
+	if err := ensureEnv(p, vals["env"]); err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
 		return 1
 	}
-	path := rest[0]
+	path := positionals[0]
 	if !filepath.IsAbs(path) {
-		// Allow relative to cwd; also try project root.
 		if _, err := os.Stat(path); err != nil {
 			alt := filepath.Join(p.Root(), path)
 			if _, err2 := os.Stat(alt); err2 == nil {
@@ -421,20 +446,20 @@ func cmdImport(p *project.Project, args []string, stdout, stderr io.Writer) int 
 }
 
 func cmdExport(p *project.Project, args []string, stdout, stderr io.Writer) int {
-	reveal := false
-	filtered := make([]string, 0, len(args))
-	for _, a := range args {
-		if a == "--reveal" {
-			reveal = true
-			continue
-		}
-		filtered = append(filtered, a)
+	bools, _, positionals, err := parseFlags(args, []string{"reveal"}, nil)
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
 	}
-	if len(filtered) < 1 {
+	if len(positionals) < 1 {
 		fmt.Fprintln(stderr, "usage: envy export [--reveal] <env>")
 		return 2
 	}
-	text, err := p.ExportEnv(filtered[0], reveal)
+	if len(positionals) > 1 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[1])
+		return 2
+	}
+	text, err := p.ExportEnv(positionals[0], bools["reveal"])
 	if err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
 		return 1
@@ -445,7 +470,7 @@ func cmdExport(p *project.Project, args []string, stdout, stderr io.Writer) int 
 
 func cmdAgent(p *project.Project, args []string, stdout, stderr io.Writer) int {
 	if len(args) < 1 {
-		fmt.Fprintln(stderr, "usage: envy agent <grant|revoke> ...")
+		fmt.Fprintln(stderr, "usage: envy agent <grant|revoke|session> ...")
 		return 2
 	}
 	switch args[0] {
@@ -453,6 +478,8 @@ func cmdAgent(p *project.Project, args []string, stdout, stderr io.Writer) int {
 		return cmdAgentGrant(p, args[1:], stdout, stderr)
 	case "revoke":
 		return cmdAgentRevoke(p, args[1:], stdout, stderr)
+	case "session":
+		return cmdAgentSession(p, args[1:], stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "envy: unknown agent subcommand %q\n", args[0])
 		return 2
@@ -465,50 +492,114 @@ func cmdAgentGrant(p *project.Project, args []string, stdout, stderr io.Writer) 
 		return 2
 	}
 	agent := args[0]
-	env := ""
-	write, del, readSecrets := false, false, false
-	ttl := 30 * time.Minute
-	rest := args[1:]
-	for i := 0; i < len(rest); i++ {
-		a := rest[i]
-		switch {
-		case a == "--env" && i+1 < len(rest):
-			env = rest[i+1]
-			i++
-		case strings.HasPrefix(a, "--env="):
-			env = strings.TrimPrefix(a, "--env=")
-		case a == "--write":
-			write = true
-		case a == "--delete":
-			del = true
-		case a == "--read-secrets":
-			readSecrets = true
-		case a == "--ttl" && i+1 < len(rest):
-			d, err := time.ParseDuration(rest[i+1])
-			if err != nil {
-				fmt.Fprintf(stderr, "envy: invalid ttl: %v\n", err)
-				return 2
-			}
-			ttl = d
-			i++
-		case strings.HasPrefix(a, "--ttl="):
-			d, err := time.ParseDuration(strings.TrimPrefix(a, "--ttl="))
-			if err != nil {
-				fmt.Fprintf(stderr, "envy: invalid ttl: %v\n", err)
-				return 2
-			}
-			ttl = d
-		}
+	bools, vals, positionals, err := parseFlags(args[1:], []string{"write", "delete", "read-secrets"}, []string{"env", "ttl"})
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
 	}
+	if len(positionals) > 0 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[0])
+		return 2
+	}
+	env := vals["env"]
 	if env == "" {
 		fmt.Fprintln(stderr, "envy: --env is required")
 		return 2
 	}
-	g, err := p.GrantAgent(agent, env, write, del, readSecrets, ttl)
+	ttl := 30 * time.Minute
+	if raw, ok := vals["ttl"]; ok {
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			fmt.Fprintf(stderr, "envy: invalid ttl: %v\n", err)
+			return 2
+		}
+		ttl = d
+	}
+	g, err := p.GrantAgent(agent, env, bools["write"], bools["delete"], bools["read-secrets"], ttl)
 	if err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
 		return 1
 	}
+	return printGrant(stdout, agent, g)
+}
+
+func cmdAgentRevoke(p *project.Project, args []string, stdout, stderr io.Writer) int {
+	_, _, positionals, err := parseFlags(args, nil, nil)
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
+	}
+	if len(positionals) < 1 {
+		fmt.Fprintln(stderr, "usage: envy agent revoke <identity>")
+		return 2
+	}
+	if len(positionals) > 1 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[1])
+		return 2
+	}
+	if err := p.RevokeAgent(positionals[0]); err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "revoked %s\n", positionals[0])
+	return 0
+}
+
+func cmdAgentSession(p *project.Project, args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, "usage: envy agent session <start|stop> ...")
+		return 2
+	}
+	switch args[0] {
+	case "start":
+		return cmdAgentSessionStart(p, args[1:], stdout, stderr)
+	case "stop":
+		return cmdAgentRevoke(p, args[1:], stdout, stderr)
+	default:
+		fmt.Fprintf(stderr, "envy: unknown agent session subcommand %q\n", args[0])
+		return 2
+	}
+}
+
+func cmdAgentSessionStart(p *project.Project, args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 {
+		fmt.Fprintln(stderr, "usage: envy agent session start <identity> [--env name] [--ttl 30m]")
+		return 2
+	}
+	agent := args[0]
+	_, vals, positionals, err := parseFlags(args[1:], nil, []string{"env", "ttl"})
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
+	}
+	if len(positionals) > 0 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[0])
+		return 2
+	}
+	env := vals["env"]
+	if env == "" {
+		env = p.ActiveEnvironment()
+	}
+	ttl := 30 * time.Minute
+	if raw, ok := vals["ttl"]; ok {
+		d, err := time.ParseDuration(raw)
+		if err != nil {
+			fmt.Fprintf(stderr, "envy: invalid ttl: %v\n", err)
+			return 2
+		}
+		ttl = d
+	}
+	// Session defaults: metadata + write; secrets and delete remain denied.
+	g, err := p.GrantAgent(agent, env, true, false, false, ttl)
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "Agent session started\n")
+	return printGrant(stdout, agent, g)
+}
+
+func printGrant(stdout io.Writer, agent string, g project.GrantDisplay) int {
 	fmt.Fprintln(stdout, displayName(agent))
 	fmt.Fprintf(stdout, "Environment: %s\n\n", g.Environment)
 	fmt.Fprintf(stdout, "read metadata     %s\n", boolGlyph(true))
@@ -520,16 +611,72 @@ func cmdAgentGrant(p *project.Project, args []string, stdout, stderr io.Writer) 
 	return 0
 }
 
-func cmdAgentRevoke(p *project.Project, args []string, stdout, stderr io.Writer) int {
-	if len(args) < 1 {
-		fmt.Fprintln(stderr, "usage: envy agent revoke <identity>")
+func cmdSchema(p *project.Project, args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 || args[0] != "generate" {
+		fmt.Fprintln(stderr, "usage: envy schema generate")
 		return 2
 	}
-	if err := p.RevokeAgent(args[0]); err != nil {
+	_, _, positionals, err := parseFlags(args[1:], nil, nil)
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
+	}
+	if len(positionals) > 0 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[0])
+		return 2
+	}
+	n, err := p.GenerateSchema()
+	if err != nil {
 		fmt.Fprintf(stderr, "envy: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "revoked %s\n", args[0])
+	fmt.Fprintf(stdout, "generated schema for %d keys (no secret values written)\n", n)
+	return 0
+}
+
+func cmdExample(p *project.Project, args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 || args[0] != "generate" {
+		fmt.Fprintln(stderr, "usage: envy example generate")
+		return 2
+	}
+	_, _, positionals, err := parseFlags(args[1:], nil, nil)
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
+	}
+	if len(positionals) > 0 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[0])
+		return 2
+	}
+	path, err := p.WriteExampleFile()
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "wrote %s\n", path)
+	return 0
+}
+
+func cmdHooks(p *project.Project, args []string, stdout, stderr io.Writer) int {
+	if len(args) < 1 || args[0] != "install" {
+		fmt.Fprintln(stderr, "usage: envy hooks install")
+		return 2
+	}
+	_, _, positionals, err := parseFlags(args[1:], nil, nil)
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 2
+	}
+	if len(positionals) > 0 {
+		fmt.Fprintf(stderr, "envy: unexpected argument %q\n", positionals[0])
+		return 2
+	}
+	path, err := p.InstallHooks()
+	if err != nil {
+		fmt.Fprintf(stderr, "envy: %v\n", err)
+		return 1
+	}
+	fmt.Fprintf(stdout, "installed %s\n", path)
 	return 0
 }
 

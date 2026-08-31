@@ -30,10 +30,19 @@ go run ./cmd/envy export production --reveal
 go run ./cmd/envy run development -- npm run dev
 go run ./cmd/envy agent grant claude-code --env development --write --ttl 30m
 go run ./cmd/envy agent revoke claude-code
+go run ./cmd/envy agent session start claude-code --env development --ttl 30m
+go run ./cmd/envy schema generate
+go run ./cmd/envy example generate
+go run ./cmd/envy hooks install
 
 # MCP server (stdio) for AI agents
 ENVY_ROOT=. ENVY_AGENT=default go run ./cmd/envy-mcp
 ```
+
+## Agent skill
+
+Reusable rules for coding agents live in `skills/env-management/SKILL.md`.
+
 
 ## Tests
 
