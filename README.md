@@ -8,7 +8,24 @@ access without exposing secrets by default.
 
 - Go 1.23+
 
-## Quick start
+## Release usage
+
+Install a released version with Go, then run `envy` from a project directory
+that contains `envy.yaml`:
+
+```bash
+go install github.com/fxckcode/envy/cmd/envy@latest
+envy
+```
+
+For the MCP server used by AI agents:
+
+```bash
+go install github.com/fxckcode/envy/cmd/envy-mcp@latest
+ENVY_ROOT=. ENVY_AGENT=default envy-mcp
+```
+
+## Quick start from source
 
 ```bash
 # Interactive TUI (from a project directory containing envy.yaml)
@@ -47,7 +64,10 @@ Reusable rules for coding agents live in `skills/env-management/SKILL.md`.
 ## Tests
 
 ```bash
+gofmt -l $(find . -name '*.go' -not -path './.git/*')
+go vet ./...
 go test ./...
+go build ./...
 ```
 
 ## MCP tools
