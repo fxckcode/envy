@@ -88,3 +88,20 @@ Agent-facing tools (`env_list`, `env_check`, `env_diff`, `env_metadata`, `env_se
 | `A` | Open pending agent approval |
 | `q` | Quit |
 | `tab` | Cycle focus |
+
+## Configuration
+
+Envy reads project configuration from `envy.yaml` and discovers local environment files without printing their values. Use `.env.example` for shareable placeholders and keep real `.env*` files out of version control. The `check`, `diff`, and `doctor` commands report metadata and validation results with sensitive values redacted.
+
+## Contributing
+
+1. Fork the repository and create a focused branch.
+2. Make the smallest change that addresses the problem.
+3. Run `gofmt`, `go vet ./...`, `go test ./...`, and `go build ./...`.
+4. Open a pull request describing the behavior change and verification performed.
+
+Please do not include credentials, production environment values, private configuration, or generated `.envy/` data in commits or issue reports.
+
+## License
+
+Envy is released under the [MIT License](LICENSE).
