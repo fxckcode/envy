@@ -38,4 +38,5 @@ Independent verification found `Service.Copy` checks the target's write permissi
 - Owner authorized updating `internal/mcpapi/acceptance_test.go` to configure ReadValues for successful scenarios 3, 5, 12, and 13 while preserving separate denied-path tests.
 - Focused and full tests pass offline with cached dependencies. Final independent verifier confirmed source permission, target checks, audit, acceptance cases, and E3 descriptions; `gofmt -d` and `git diff --check` pass.
 - Dependencies were downloaded only through `https://proxy.golang.org`; all post-cache test attempts used `GOPROXY=off`.
-- Next: record ECP1 in a local permission work-unit commit; no push/PR authorized.
+- ECP1 was included in local permission commit `5d95d5438a56951f4a71802d9220599d070a87d2`.
+- No push or PR was made.
