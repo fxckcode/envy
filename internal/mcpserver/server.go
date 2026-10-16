@@ -32,7 +32,7 @@ func Register(s *server.MCPServer, svc *mcpapi.Service) {
 	})
 
 	add(mcp.NewTool("env_get_schema",
-		mcp.WithDescription("Return schema metadata and secret markers; defaults and enumerated values require read_values permission"),
+		mcp.WithDescription("Return schema metadata and secret markers; defaults and enumerated values require read_values in every configured environment"),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return jsonResult(svc.GetSchema(), nil)
 	})
@@ -166,7 +166,7 @@ func Register(s *server.MCPServer, svc *mcpapi.Service) {
 	})
 
 	add(mcp.NewTool("env_generate_example",
-		mcp.WithDescription("Generate an example env payload; non-secret defaults require read_values and secret placeholders remain empty"),
+		mcp.WithDescription("Generate an example env payload; non-secret defaults require read_values in every configured environment and secret placeholders remain empty"),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return jsonResult(svc.GenerateExample(), nil)
 	})

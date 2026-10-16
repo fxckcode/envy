@@ -26,7 +26,7 @@ Align Envy's MCP read behavior with the explicit `READ METADATA` / `READ VALUES`
 - `Metadata=false` never exposes that environment's names/schema/status/existence/doctor/diff metadata. `ListEnvironments` must not reveal denied environment names; global schema/example/doctor output must fail closed if any configured environment is denied, with an explicit denial result rather than an empty result that looks successful. `Diff` must not return values without ReadValues and must require metadata permission for both environments.
 - Secret values remain redacted unless ReadValues permits them.
 - Audit write failures are visible in local diagnostics/logs but do not turn an already-applied mutation into an error; README says audit persistence is attempted/best-effort, not guaranteed.
-- MCP tool descriptions and response comments for list/metadata/diff/schema/example methods must state that value payloads depend on `ReadValues`; they must not promise unconditional redaction where grants can return plaintext.
+- MCP tool descriptions for list/metadata/diff/schema/example methods must state that value payloads depend on `ReadValues`; global schema and generated-example values require `ReadValues` in every configured environment. No description may promise unconditional redaction where grants can return plaintext.
 - Tests are added before behavior changes. Use only offline commands with `GOTOOLCHAIN=go1.23.12 GOPROXY=off GOSUMDB=off`; no dependency-network fallback. Go 1.23.12 was installed into the user's Go toolchain cache after explicit user authorization. If dependencies are not cached, report tests unavailable; do not download modules.
 
 ## Routing and risk
@@ -41,7 +41,7 @@ Align Envy's MCP read behavior with the explicit `READ METADATA` / `READ VALUES`
 - Go 1.23.12 was installed into the per-user toolchain cache after explicit owner authorization. Required modules were downloaded only from `https://proxy.golang.org`; all subsequent tests were offline.
 - E1 completed: metadata gates and ReadValues filtering cover List, Metadata, ListEnvironments, GetSchema, Check, Diff, Exists, ReadValue, GenerateExample, and Doctor; the separately authorized `env_copy` follow-up enforces source ReadValues before transfer.
 - E2 completed: persistence failures are logged but remain best-effort; README states the accurate contract. Audit failure does not turn an already-applied mutation into an error.
-- E3 completed: MCP descriptions and response-type comments no longer promise unconditional secret redaction. The reviewer noted global schema/example values require ReadValues in every configured environment; descriptions state the permission dependency but do not spell out the all-environment rule.
+- E3 completed: MCP descriptions and response-type comments no longer promise unconditional redaction. After the independent PASS noted global schema/example permissions apply across every environment, parent clarified that scope and reran the full suite, formatting, and diff check successfully.
 - Acceptance scenarios 3, 5, 12, and 13 explicitly grant ReadValues when asserting value/default output. Final independent verifier verdict: PASS for permission/audit behavior and E3 claims.
 - Full offline suite passed: `GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off /home/fxckcode/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.23.12.linux-amd64/bin/go test ./...`; `gofmt -d` and `git diff --check` passed.
 - Engram mirror pending because the memory store does not resolve these repositories; do not guess a project key.
