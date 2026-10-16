@@ -46,5 +46,5 @@ Align Envy's MCP read behavior with the explicit `READ METADATA` / `READ VALUES`
 - Full offline suite passed: `GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off /home/fxckcode/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.23.12.linux-amd64/bin/go test ./...`; `gofmt -d` and `git diff --check` passed.
 - Engram mirror pending because the memory store does not resolve these repositories; do not guess a project key.
 - Permission work-unit commit for E1/E3/ECP1: `5d95d5438a56951f4a71802d9220599d070a87d2` (`fix: enforce Envy MCP read permissions`).
-- E2 audit/README changes passed the same full offline suite and independent review; commit them as a separate work unit.
-- No push or PR was created.
+- E2 work-unit commit: `8083df9128d81095b0c2c2edcef9e799bbb45730` (`fix: make Envy audit persistence best-effort and observable`).
+- All authorized Envy tasks are closed locally; no push or PR was created.
