@@ -47,4 +47,5 @@ Align Envy's MCP read behavior with the explicit `READ METADATA` / `READ VALUES`
 - Engram mirror pending because the memory store does not resolve these repositories; do not guess a project key.
 - Permission work-unit commit for E1/E3/ECP1: `5d95d5438a56951f4a71802d9220599d070a87d2` (`fix: enforce Envy MCP read permissions`).
 - E2 work-unit commit: `8083df9128d81095b0c2c2edcef9e799bbb45730` (`fix: make Envy audit persistence best-effort and observable`).
+- E3 precision follow-up commit: `8ee3bf62ece1c20d72d62c358c452dc3e84ef19b` (`docs: clarify global Envy read permissions`).
 - All authorized Envy tasks are closed locally; no push or PR was created.
