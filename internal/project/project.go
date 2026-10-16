@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sort"
@@ -553,7 +554,9 @@ func (p *Project) appendAuditLocked(actor, action, key, env string, result Audit
 		Result:      result,
 		Detail:      detail,
 	})
-	_ = p.persistAuditLocked()
+	if err := p.persistAuditLocked(); err != nil {
+		log.Printf("envy: audit persistence failed: %v", err)
+	}
 }
 
 func (p *Project) persistAuditLocked() error {
@@ -589,8 +592,12 @@ func (p *Project) persistAuditLocked() error {
 	if err != nil {
 		return err
 	}
-	_, err = f.Write(append(data, '\n'))
-	return err
+	_, writeErr := f.Write(append(data, '\n'))
+	closeErr := f.Close()
+	if writeErr != nil {
+		return writeErr
+	}
+	return closeErr
 }
 
 func (p *Project) loadAuditLocked() {

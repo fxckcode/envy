@@ -18,7 +18,7 @@ Align Envy's MCP read behavior with the explicit `READ METADATA` / `READ VALUES`
 
 ## Tasks
 - [x] E1 — Enforce the per-environment metadata and value permissions across every MCP data-bearing method, including schema/defaults, generated examples, Doctor, and Diff; add regression tests.
-- [ ] E2 — Surface audit persistence errors as best-effort diagnostics and make README wording accurate; add a focused test.
+- [x] E2 — Surface audit persistence errors as best-effort diagnostics and make README wording accurate; add a focused test.
 - [x] E3 — Correct MCP tool descriptions and response comments for all `ReadValues`-dependent value-bearing responses.
 
 ## Acceptance criteria
@@ -45,4 +45,6 @@ Align Envy's MCP read behavior with the explicit `READ METADATA` / `READ VALUES`
 - Acceptance scenarios 3, 5, 12, and 13 explicitly grant ReadValues when asserting value/default output. Final independent verifier verdict: PASS for permission/audit behavior and E3 claims.
 - Full offline suite passed: `GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off /home/fxckcode/go/pkg/mod/golang.org/toolchain@v0.0.1-go1.23.12.linux-amd64/bin/go test ./...`; `gofmt -d` and `git diff --check` passed.
 - Engram mirror pending because the memory store does not resolve these repositories; do not guess a project key.
-- Next: create a local permission work-unit commit for E1/E3/ECP1, then a separate E2 audit/README work-unit commit. No push or PR authorized.
+- Permission work-unit commit for E1/E3/ECP1: `5d95d5438a56951f4a71802d9220599d070a87d2` (`fix: enforce Envy MCP read permissions`).
+- E2 audit/README changes passed the same full offline suite and independent review; commit them as a separate work unit.
+- No push or PR was created.
