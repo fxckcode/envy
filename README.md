@@ -72,7 +72,7 @@ go build ./...
 
 ## MCP tools
 
-Agent-facing tools (`env_list`, `env_check`, `env_diff`, `env_metadata`, `env_set`, …) redact secrets as `[REDACTED]`, enforce least-privilege agent permissions from `envy.yaml`, and write audit rows under `.envy/audit.jsonl`.
+Agent-facing tools (`env_list`, `env_check`, `env_diff`, `env_metadata`, `env_set`, …) enforce per-environment metadata and value permissions. Values are returned only when `read_values` is granted; otherwise secret values are redacted and non-secret values are omitted. Audit entries are attempted under `.envy/audit.jsonl`; persistence is best-effort, and failures are logged without failing the operation.
 
 ## Keyboard (TUI)
 

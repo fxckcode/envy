@@ -17,7 +17,7 @@ func Register(s *server.MCPServer, svc *mcpapi.Service) {
 	}
 
 	add(mcp.NewTool("env_list",
-		mcp.WithDescription("List environment keys and metadata; secret values are redacted"),
+		mcp.WithDescription("List environment keys and metadata; value payloads are returned only when read_values is granted"),
 		mcp.WithString("environment", mcp.Description("Environment name (default: development)")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		env, _ := req.GetArguments()["environment"].(string)
@@ -32,7 +32,7 @@ func Register(s *server.MCPServer, svc *mcpapi.Service) {
 	})
 
 	add(mcp.NewTool("env_get_schema",
-		mcp.WithDescription("Return schema types, required flags, defaults, and secret markers"),
+		mcp.WithDescription("Return schema metadata and secret markers; defaults and enumerated values require read_values in every configured environment"),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return jsonResult(svc.GetSchema(), nil)
 	})
@@ -47,7 +47,7 @@ func Register(s *server.MCPServer, svc *mcpapi.Service) {
 	})
 
 	add(mcp.NewTool("env_diff",
-		mcp.WithDescription("Compare two environments; secrets redacted, non-secret diffs include values"),
+		mcp.WithDescription("Compare two environments; changed value sides are included only where read_values is granted"),
 		mcp.WithString("left", mcp.Required(), mcp.Description("Left environment")),
 		mcp.WithString("right", mcp.Required(), mcp.Description("Right environment")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -78,7 +78,7 @@ func Register(s *server.MCPServer, svc *mcpapi.Service) {
 	})
 
 	add(mcp.NewTool("env_metadata",
-		mcp.WithDescription("Return status, type, secret flag, source, and redacted value placeholder"),
+		mcp.WithDescription("Return status, type, secret flag, source, and a value field only when read_values permits it"),
 		mcp.WithString("environment", mcp.Description("Environment name")),
 		mcp.WithString("key", mcp.Required(), mcp.Description("Variable key")),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -166,7 +166,7 @@ func Register(s *server.MCPServer, svc *mcpapi.Service) {
 	})
 
 	add(mcp.NewTool("env_generate_example",
-		mcp.WithDescription("Generate example env payload with empty/default non-secret placeholders"),
+		mcp.WithDescription("Generate an example env payload; non-secret defaults require read_values in every configured environment and secret placeholders remain empty"),
 	), func(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		return jsonResult(svc.GenerateExample(), nil)
 	})
