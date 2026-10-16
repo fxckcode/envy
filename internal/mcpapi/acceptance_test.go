@@ -110,7 +110,10 @@ func TestScenario2_EnvListEnvironments(t *testing.T) {
 
 // 3. env_get_schema — types, required, defaults, secret markers; no live secrets
 func TestScenario3_EnvGetSchema(t *testing.T) {
-	svc, _ := openSvc(t, "default")
+	svc, p := openSvc(t, "default")
+	for _, env := range []string{"development", "staging", "production"} {
+		setAgentPermissions(p, "default", env, true, true)
+	}
 	res := svc.GetSchema()
 	foundDB, foundPort := false, false
 	for _, f := range res.Fields {
@@ -177,9 +180,16 @@ func TestScenario4_EnvCheckInvalidMissing(t *testing.T) {
 	assertNoSecretLeak(t, blob)
 }
 
-// 5. env_diff — presence + non-secret value diffs; secrets redacted
+// 5. env_diff — value diffs with ReadValues and redaction without it
 func TestScenario5_EnvDiff(t *testing.T) {
-	svc, _ := openSvc(t, "default")
+	svc, p := openSvc(t, "default")
+	redacted, err := svc.Diff("staging", "production")
+	if err != nil {
+		t.Fatalf("diff without read_values: %v", err)
+	}
+	for _, env := range []string{"staging", "production"} {
+		setAgentPermissions(p, "default", env, true, true)
+	}
 	res, err := svc.Diff("staging", "production")
 	if err != nil {
 		t.Fatalf("diff: %v", err)
@@ -197,8 +207,9 @@ func TestScenario5_EnvDiff(t *testing.T) {
 	if stripe["production"].Kind != project.CellAbsent {
 		t.Fatalf("production STRIPE_SECRET kind = %s", stripe["production"].Kind)
 	}
-	if stripe["staging"].Value != redact.MCPPlaceholder {
-		t.Fatalf("secret value = %q, want redacted", stripe["staging"].Value)
+	redactedStripe := redacted.Cells["STRIPE_SECRET"]
+	if redactedStripe == nil || redactedStripe["staging"].Value != redact.MCPPlaceholder {
+		t.Fatalf("secret value without read_values = %+v, want redacted", redactedStripe)
 	}
 	aws := res.Cells["AWS_REGION"]
 	if aws["staging"].Kind != project.CellDiff || aws["production"].Kind != project.CellDiff {
@@ -210,7 +221,7 @@ func TestScenario5_EnvDiff(t *testing.T) {
 	if aws["staging"].Value == aws["production"].Value {
 		t.Fatal("differing AWS_REGION values should not match")
 	}
-	blob, _ := mcpapi.Marshal(res)
+	blob, _ := mcpapi.Marshal(redacted)
 	assertNoSecretLeak(t, blob)
 }
 
@@ -332,6 +343,7 @@ func TestScenario11_EnvDeleteDenied(t *testing.T) {
 // 12. env_copy non-secret within allowed scope
 func TestScenario12_EnvCopy(t *testing.T) {
 	svc, p := openSvc(t, "writer-agent")
+	setAgentPermissions(p, "writer-agent", "staging", true, true)
 	res, err := svc.Copy("staging", "development", "DEBUG")
 	if err != nil || !res.OK {
 		t.Fatalf("copy: %+v %v", res, err)
@@ -346,7 +358,10 @@ func TestScenario12_EnvCopy(t *testing.T) {
 
 // 13. env_generate_example — keys + non-secret defaults only
 func TestScenario13_EnvGenerateExample(t *testing.T) {
-	svc, _ := openSvc(t, "default")
+	svc, p := openSvc(t, "default")
+	for _, env := range []string{"development", "staging", "production"} {
+		setAgentPermissions(p, "default", env, true, true)
+	}
 	res := svc.GenerateExample()
 	if res.Payload["PORT"] != "3000" {
 		t.Fatalf("PORT default = %q", res.Payload["PORT"])

@@ -30,7 +30,7 @@ func New(p *project.Project, actor string) *Service {
 // Actor returns the current agent identity.
 func (s *Service) Actor() string { return s.actor }
 
-// --- Response types (JSON-serializable, never contain live secrets) ---
+// --- Response types (JSON-serializable; value fields are permission-gated and may contain live secrets when ReadValues permits them) ---
 
 type listItem struct {
 	Key    string `json:"key"`
@@ -52,6 +52,7 @@ type EnvironmentsResult struct {
 // SchemaResult is env_get_schema output.
 type SchemaResult struct {
 	Fields []project.SchemaFieldView `json:"fields"`
+	Error  string                    `json:"error,omitempty"`
 }
 
 // CheckResult is env_check output.
@@ -98,6 +99,7 @@ type MutationResult struct {
 // ExampleResult is env_generate_example output.
 type ExampleResult struct {
 	Payload map[string]string `json:"payload"`
+	Error   string            `json:"error,omitempty"`
 }
 
 // DoctorCheck is one health finding for agents.
@@ -112,6 +114,7 @@ type DoctorCheck struct {
 type DoctorOut struct {
 	Checks []DoctorCheck `json:"checks"`
 	Score  int           `json:"score"`
+	Error  string        `json:"error,omitempty"`
 }
 
 // AuditOut is the audit trail projection.
@@ -128,8 +131,8 @@ type auditView struct {
 	Result      string    `json:"result"`
 }
 
-// List returns keys and secret flags; secret values are always [REDACTED]
-// unless the agent has read_values (still never required by default policy).
+// List returns keys and secret flags; value payloads require read_values.
+// Without it, non-secret values are omitted and secret values are redacted.
 func (s *Service) List(env string) (ListResult, error) {
 	if env == "" {
 		env = "development"
@@ -160,11 +163,14 @@ func (s *Service) redactValue(secret bool, env, key string, readValues bool) str
 	if !ok {
 		return ""
 	}
-	if secret {
-		if readValues {
-			return raw
+	if !readValues {
+		if secret {
+			return redact.MCPPlaceholder
 		}
-		return redact.MCPPlaceholder
+		return ""
+	}
+	if secret {
+		return raw
 	}
 	return raw
 }
@@ -172,21 +178,63 @@ func (s *Service) redactValue(secret bool, env, key string, readValues bool) str
 // ListEnvironments returns environment names and sources without secret payloads.
 func (s *Service) ListEnvironments() EnvironmentsResult {
 	envs := s.project.ListEnvironments()
+	visible := make([]project.EnvInfo, 0, len(envs))
+	for _, env := range envs {
+		if s.project.AgentPerms(s.actor, env.Name).Metadata {
+			visible = append(visible, env)
+		}
+	}
 	s.project.AppendAudit(s.actor, "env_list_environments", "", "", project.AuditOK, "")
-	return EnvironmentsResult{Environments: envs}
+	return EnvironmentsResult{Environments: visible}
 }
 
-// GetSchema returns types, required flags, defaults, and secret markers.
+// GetSchema returns schema metadata only when the actor can read metadata in every
+// configured environment; value-bearing schema fields also require read_values everywhere.
 func (s *Service) GetSchema() SchemaResult {
+	if !s.metadataAllowedEverywhere() {
+		s.project.AppendAudit(s.actor, "env_get_schema", "", "", project.AuditDenied, "metadata denied")
+		return SchemaResult{Error: "metadata permission denied"}
+	}
 	fields := s.project.SchemaViews()
+	if !s.readValuesAllowedEverywhere() {
+		for i := range fields {
+			fields[i].Default = ""
+			fields[i].Values = nil
+			if fields[i].Constraints != nil {
+				fields[i].Constraints.Values = nil
+			}
+		}
+	}
 	s.project.AppendAudit(s.actor, "env_get_schema", "", "", project.AuditOK, "")
 	return SchemaResult{Fields: fields}
+}
+
+func (s *Service) metadataAllowedEverywhere() bool {
+	for _, env := range s.project.EnvironmentNames() {
+		if !s.project.AgentPerms(s.actor, env).Metadata {
+			return false
+		}
+	}
+	return true
+}
+
+func (s *Service) readValuesAllowedEverywhere() bool {
+	for _, env := range s.project.EnvironmentNames() {
+		if !s.project.AgentPerms(s.actor, env).ReadValues {
+			return false
+		}
+	}
+	return true
 }
 
 // Check validates an environment; never includes secret values.
 func (s *Service) Check(env string) (CheckResult, error) {
 	if env == "" {
 		env = "development"
+	}
+	if !s.project.AgentPerms(s.actor, env).Metadata {
+		s.project.AppendAudit(s.actor, "env_check", "", env, project.AuditDenied, "metadata denied")
+		return CheckResult{}, fmt.Errorf("%w: metadata", project.ErrPermission)
 	}
 	val, err := s.project.ValidateEnv(env)
 	if err != nil {
@@ -201,11 +249,49 @@ func (s *Service) Check(env string) (CheckResult, error) {
 	}, nil
 }
 
-// Diff compares two environments; secrets redacted, non-secret diffs include values.
+// Diff compares two environments; values require read_values in the environment they belong to.
 func (s *Service) Diff(left, right string) (DiffResult, error) {
+	leftPerms := s.project.AgentPerms(s.actor, left)
+	rightPerms := s.project.AgentPerms(s.actor, right)
+	if !leftPerms.Metadata {
+		s.project.AppendAudit(s.actor, "env_diff", "", left+".."+right, project.AuditDenied, "metadata denied")
+		return DiffResult{}, fmt.Errorf("%w: metadata", project.ErrPermission)
+	}
+	if !rightPerms.Metadata {
+		s.project.AppendAudit(s.actor, "env_diff", "", left+".."+right, project.AuditDenied, "metadata denied")
+		return DiffResult{}, fmt.Errorf("%w: metadata", project.ErrPermission)
+	}
 	cmp, err := s.project.Compare(left, right)
 	if err != nil {
 		return DiffResult{}, err
+	}
+	readValues := map[string]bool{left: leftPerms.ReadValues, right: rightPerms.ReadValues}
+	for _, key := range cmp.Keys {
+		secret := s.project.IsSecretKey(key)
+		for env, cell := range cmp.Cells[key] {
+			if !readValues[env] {
+				hasValue := cell.Value != ""
+				cell.Value = ""
+				if secret && hasValue {
+					cell.Value = redact.MCPPlaceholder
+				}
+				switch cell.Kind {
+				case project.CellPresent:
+					cell.Display = "✓"
+				case project.CellAbsent:
+					cell.Display = "✗"
+				case project.CellDiff:
+					cell.Display = "≠"
+				case project.CellOnly:
+					cell.Display = "◇"
+				}
+			} else if secret && cell.Value != "" {
+				if raw, ok := s.project.RawValue(env, key); ok {
+					cell.Value = raw
+				}
+			}
+			cmp.Cells[key][env] = cell
+		}
 	}
 	s.project.AppendAudit(s.actor, "env_diff", "", left+".."+right, project.AuditOK, "")
 	return DiffResult{CompareResult: cmp}, nil
@@ -216,6 +302,10 @@ func (s *Service) Exists(env, key string) (ExistsResult, error) {
 	if env == "" {
 		env = "development"
 	}
+	if !s.project.AgentPerms(s.actor, env).Metadata {
+		s.project.AppendAudit(s.actor, "env_exists", key, env, project.AuditDenied, "metadata denied")
+		return ExistsResult{}, fmt.Errorf("%w: metadata", project.ErrPermission)
+	}
 	ok, err := s.project.Exists(env, key)
 	if err != nil {
 		return ExistsResult{}, err
@@ -224,7 +314,7 @@ func (s *Service) Exists(env, key string) (ExistsResult, error) {
 	return ExistsResult{Environment: env, Key: key, Exists: ok}, nil
 }
 
-// Metadata returns status, type, secret flag, source, and redacted value placeholder.
+// Metadata returns status, type, secret flag, source, and a value only when read_values is granted.
 func (s *Service) Metadata(env, key string) (MetadataResult, error) {
 	if env == "" {
 		env = "development"
@@ -268,24 +358,20 @@ func (s *Service) Metadata(env, key string) (MetadataResult, error) {
 	}, nil
 }
 
-// ReadValue attempts to return plaintext. Secrets require read_values; denials are audited.
+// ReadValue attempts to return plaintext. All values require read_values; denials are audited.
 func (s *Service) ReadValue(env, key string) (string, error) {
 	if env == "" {
 		env = "development"
 	}
 	perms := s.project.AgentPerms(s.actor, env)
+	if !perms.Metadata {
+		s.project.AppendAudit(s.actor, "env_read", key, env, project.AuditDenied, "metadata denied")
+		return "", fmt.Errorf("%w: metadata", project.ErrPermission)
+	}
 	raw, ok := s.project.RawValue(env, key)
 	if !ok {
 		s.project.AppendAudit(s.actor, "env_read", key, env, project.AuditError, "not found")
 		return "", fmt.Errorf("key %q not found", key)
-	}
-	secret := false
-	if meta, err := s.project.Metadata(env, key); err == nil {
-		secret = meta.Secret
-	}
-	if secret && !perms.ReadValues {
-		s.project.AppendAudit(s.actor, "env_read", key, env, project.AuditDenied, "read_values denied")
-		return "", fmt.Errorf("%w: read_values", project.ErrPermission)
 	}
 	if !perms.ReadValues {
 		s.project.AppendAudit(s.actor, "env_read", key, env, project.AuditDenied, "read_values denied")
@@ -378,8 +464,16 @@ func (s *Service) Delete(env, key string) (MutationResult, error) {
 
 // Copy copies a key between environments without exposing plaintext to the agent.
 func (s *Service) Copy(fromEnv, toEnv, key string) (MutationResult, error) {
+	permsFrom := s.project.AgentPerms(s.actor, fromEnv)
 	permsTo := s.project.AgentPerms(s.actor, toEnv)
 	out := MutationResult{Environment: toEnv, Key: key}
+	if !permsFrom.ReadValues {
+		out.OK = false
+		out.Status = "denied"
+		out.Message = "read_values permission required on source"
+		s.project.AppendAudit(s.actor, "env_copy", key, toEnv, project.AuditDenied, out.Message)
+		return out, fmt.Errorf("%w: read_values", project.ErrPermission)
+	}
 	if s.project.Config().IsProtected(toEnv) && !permsTo.Write {
 		out.OK = false
 		out.Status = "unauthorized"
@@ -407,13 +501,26 @@ func (s *Service) Copy(fromEnv, toEnv, key string) (MutationResult, error) {
 
 // GenerateExample returns empty/default non-secret placeholders; never live secrets.
 func (s *Service) GenerateExample() ExampleResult {
+	if !s.metadataAllowedEverywhere() {
+		s.project.AppendAudit(s.actor, "env_generate_example", "", "", project.AuditDenied, "metadata denied")
+		return ExampleResult{Error: "metadata permission denied"}
+	}
 	payload := s.project.GenerateExample()
+	if !s.readValuesAllowedEverywhere() {
+		for key := range payload {
+			payload[key] = ""
+		}
+	}
 	s.project.AppendAudit(s.actor, "env_generate_example", "", "", project.AuditOK, "")
 	return ExampleResult{Payload: payload}
 }
 
 // Doctor returns structured checks and score; sensitive findings redacted.
 func (s *Service) Doctor() DoctorOut {
+	if !s.metadataAllowedEverywhere() {
+		s.project.AppendAudit(s.actor, "env_doctor", "", "", project.AuditDenied, "metadata denied")
+		return DoctorOut{Error: "metadata permission denied"}
+	}
 	d := s.project.Doctor()
 	checks := make([]DoctorCheck, 0, len(d.Checks))
 	for _, c := range d.Checks {
